@@ -11,60 +11,61 @@ class User extends Authenticatable
 {
     use HasFactory, Notifiable;
 
-    public const ROLE_PRINCIPAL = 'principal';
-    public const ROLE_DEPUTY_PRINCIPAL = 'deputy_principal';
-    public const ROLE_HOD = 'hod';
-    public const ROLE_ACCOUNTANT = 'accountant';
-    public const ROLE_STORE_KEEPER = 'store_keeper';
-    public const ROLE_SECRETARY = 'secretary';
-
-    // Backward compatibility alias
-    public const ROLE_BURSAR = self::ROLE_ACCOUNTANT;
-
-    public const ROLES = [
-        self::ROLE_PRINCIPAL,
-        self::ROLE_DEPUTY_PRINCIPAL,
-        self::ROLE_HOD,
-        self::ROLE_ACCOUNTANT,
-        self::ROLE_STORE_KEEPER,
-        self::ROLE_SECRETARY,
+    /**
+     * Allowed system roles.
+     */
+    public const ALLOWED_ROLES = [
+        'principal',
+        'deputy_principal',
+        'dean',
+        'hod',
+        'school_examiner',
+        'class_teacher',
+        'secretary',
+        'accountant',
+        'store_keeper',
     ];
 
+    /**
+     * The attributes that are mass assignable.
+     */
     protected $fillable = [
         'name',
         'email',
         'password',
         'role',
         'department',
-        'departments',
     ];
 
+    /**
+     * The attributes that should be hidden for serialization.
+     */
     protected $hidden = [
         'password',
         'remember_token',
     ];
 
-    protected function casts(): array
+    /**
+     * The attributes that should be cast.
+     */
+    protected $casts = [
+        'email_verified_at' => 'datetime',
+        'password' => 'hashed',
+    ];
+
+    /**
+     * Normalize + validate role before saving.
+     */
+    public function setRoleAttribute($value): void
     {
-        return [
-            'email_verified_at' => 'datetime',
-            'password' => 'hashed',
-            'departments' => 'array',
-        ];
-    }
+        $normalized = str_replace([' ', '-'], '_', strtolower(trim((string) $value)));
 
-    protected static function booted(): void
-    {
-        static::saving(function (User $user) {
-            $role = strtolower(trim((string) $user->role));
+        if (!in_array($normalized, self::ALLOWED_ROLES, true)) {
+            throw ValidationException::withMessages([
+                'role' => 'Invalid role selected.',
+            ]);
+        }
 
-            if (! in_array($role, self::ROLES, true)) {
-                throw ValidationException::withMessages([
-                    'role' => 'Invalid role selected.',
-                ]);
-            }
-
-            $user->role = $role;
-        });
+        $this->attributes['role'] = $normalized;
     }
 }

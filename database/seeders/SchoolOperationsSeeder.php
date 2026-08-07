@@ -2,10 +2,12 @@
 
 namespace Database\Seeders;
 
+use App\Models\DisciplineCase;
 use App\Models\Exam;
 use App\Models\ExamResult;
 use App\Models\FinanceTransaction;
 use App\Models\InventoryItem;
+use App\Models\SportsDepartmentRecord;
 use App\Models\Student;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -24,6 +26,8 @@ class SchoolOperationsSeeder extends Seeder
             $this->seedFinanceTransactions();
             $this->seedStoreItems();
             $this->seedExamsAndResults();
+            $this->seedSportsDepartment();
+            $this->seedDisciplineCases();
         });
     }
 
@@ -51,6 +55,7 @@ class SchoolOperationsSeeder extends Seeder
         return match ($key) {
             'principal' => 'principal',
             'deputy_principal', 'deputyprincipal' => 'deputy_principal',
+            'dean', 'school_dean', 'dean_of_students' => 'dean',
             'hod', 'head_of_department', 'headteacher_department' => 'hod',
             'accountant', 'school_accountant' => 'accountant',
             'store_keeper', 'storekeeper', 'store_keeper_' => 'store_keeper',
@@ -68,7 +73,12 @@ class SchoolOperationsSeeder extends Seeder
 
         User::updateOrCreate(
             ['email' => 'deputy@vigurungani.school'],
-            ['name' => 'Deputy Principal', 'password' => Hash::make('password'), 'role' => 'deputy_principal']
+            ['name' => 'Joel Nyae', 'password' => Hash::make('password'), 'role' => 'deputy_principal']
+        );
+
+        User::updateOrCreate(
+            ['email' => 'dean@vigurungani.school'],
+            ['name' => 'School Dean', 'password' => Hash::make('password'), 'role' => 'dean']
         );
 
         User::updateOrCreate(
@@ -99,7 +109,6 @@ class SchoolOperationsSeeder extends Seeder
             ['admission_no' => 'VSS002', 'first_name' => 'Brian', 'last_name' => 'Otieno', 'parent_name' => 'Peter Otieno', 'parent_phone' => '0711000002', 'gender' => 'Male', 'education_system' => '8-4-4', 'class_level' => 'Form 2', 'pathway' => null, 'entry_marks' => 340, 'form_level' => 2, 'stream' => 'East', 'status' => 'active'],
             ['admission_no' => 'VSS003', 'first_name' => 'Cynthia', 'last_name' => 'Mwende', 'parent_name' => 'Alice Mwende', 'parent_phone' => '0711000003', 'gender' => 'Female', 'education_system' => '8-4-4', 'class_level' => 'Form 3', 'pathway' => null, 'entry_marks' => 389, 'form_level' => 3, 'stream' => 'West', 'status' => 'active'],
             ['admission_no' => 'VSS004', 'first_name' => 'David', 'last_name' => 'Kipto', 'parent_name' => 'Samuel Kipto', 'parent_phone' => '0711000004', 'gender' => 'Male', 'education_system' => '8-4-4', 'class_level' => 'Form 4', 'pathway' => null, 'entry_marks' => 355, 'form_level' => 4, 'stream' => 'South', 'status' => 'active'],
-
             ['admission_no' => 'VSS005', 'first_name' => 'Esther', 'last_name' => 'Achieng', 'parent_name' => 'Lorna Achieng', 'parent_phone' => '0722000001', 'gender' => 'Female', 'education_system' => 'CBC', 'class_level' => 'Grade 10', 'pathway' => 'STEM', 'entry_marks' => 412, 'form_level' => 1, 'stream' => 'STEMA', 'status' => 'active'],
             ['admission_no' => 'VSS006', 'first_name' => 'Felix', 'last_name' => 'Muliso', 'parent_name' => 'David Muliso', 'parent_phone' => '0722000002', 'gender' => 'Male', 'education_system' => 'CBC', 'class_level' => 'Grade 10', 'pathway' => 'Social Sciences', 'entry_marks' => 367, 'form_level' => 1, 'stream' => 'SOCA', 'status' => 'active'],
             ['admission_no' => 'VSS007', 'first_name' => 'Grace', 'last_name' => 'Njeri', 'parent_name' => 'Lucy Njeri', 'parent_phone' => '0722000003', 'gender' => 'Female', 'education_system' => 'CBC', 'class_level' => 'Grade 11', 'pathway' => 'ARTS & Sports', 'entry_marks' => 391, 'form_level' => 2, 'stream' => 'ARTB', 'status' => 'active'],
@@ -147,21 +156,10 @@ class SchoolOperationsSeeder extends Seeder
                 'category' => $item['category'],
             ];
 
-            if ($hasQuantity) {
-                $payload['quantity'] = $item['quantity'];
-            }
-
-            if ($hasUnit) {
-                $payload['unit'] = $item['unit'];
-            }
-
-            if ($hasReorder) {
-                $payload['reorder_level'] = $item['reorder_level'];
-            }
-
-            if ($hasNotes) {
-                $payload['notes'] = $item['notes'];
-            }
+            if ($hasQuantity) $payload['quantity'] = $item['quantity'];
+            if ($hasUnit) $payload['unit'] = $item['unit'];
+            if ($hasReorder) $payload['reorder_level'] = $item['reorder_level'];
+            if ($hasNotes) $payload['notes'] = $item['notes'];
 
             InventoryItem::updateOrCreate(
                 ['item_name' => $item['item_name'], 'category' => $item['category']],
@@ -194,20 +192,105 @@ class SchoolOperationsSeeder extends Seeder
                 [
                     'grading_system' => $student->education_system === 'CBC' ? 'CBC' : '844',
                     'score' => $score,
-                    'grade' => $student->education_system === 'CBC'
-                        ? null
-                        : $this->grade844($score),
-                    'points' => $student->education_system === 'CBC'
-                        ? null
-                        : $this->points844($this->grade844($score)),
-                    'cbc_level' => $student->education_system === 'CBC'
-                        ? $this->cbcLevelFromScore($score)
-                        : null,
-                    'cbc_comment' => $student->education_system === 'CBC'
-                        ? 'Competency progression observed.'
-                        : null,
+                    'grade' => $student->education_system === 'CBC' ? null : $this->grade844($score),
+                    'points' => $student->education_system === 'CBC' ? null : $this->points844($this->grade844($score)),
+                    'cbc_level' => $student->education_system === 'CBC' ? $this->cbcLevelFromScore($score) : null,
+                    'cbc_comment' => $student->education_system === 'CBC' ? 'Competency progression observed.' : null,
                     'remarks' => 'Seeded result',
                 ]
+            );
+        }
+    }
+
+    private function seedSportsDepartment(): void
+    {
+        $students = Student::query()->orderBy('id')->take(8)->get()->values();
+
+        if ($students->count() < 6) {
+            return;
+        }
+
+        $sportsRows = [
+            ['student_id' => $students[0]->id, 'sport_name' => 'Basketball', 'team_category' => 'girls', 'position' => 'Guard', 'status' => 'active', 'notes' => 'School team player'],
+            ['student_id' => $students[1]->id, 'sport_name' => 'Basketball', 'team_category' => 'boys', 'position' => 'Forward', 'status' => 'active', 'notes' => 'Inter-school fixtures'],
+            ['student_id' => $students[2]->id, 'sport_name' => 'Football', 'team_category' => 'girls', 'position' => 'Midfielder', 'status' => 'active', 'notes' => 'County league list'],
+            ['student_id' => $students[3]->id, 'sport_name' => 'Football', 'team_category' => 'boys', 'position' => 'Defender', 'status' => 'active', 'notes' => 'School first team'],
+            ['student_id' => $students[4]->id, 'sport_name' => 'Volleyball', 'team_category' => 'girls', 'position' => 'Setter', 'status' => 'active', 'notes' => 'Regional competition prep'],
+            ['student_id' => $students[5]->id, 'sport_name' => 'Volleyball', 'team_category' => 'boys', 'position' => 'Middle Blocker', 'status' => 'active', 'notes' => 'Senior team roster'],
+        ];
+
+        foreach ($sportsRows as $row) {
+            SportsDepartmentRecord::updateOrCreate(
+                [
+                    'student_id' => $row['student_id'],
+                    'sport_name' => $row['sport_name'],
+                    'team_category' => $row['team_category'],
+                ],
+                $row
+            );
+        }
+    }
+
+    private function seedDisciplineCases(): void
+    {
+        $principal = User::query()->where('role', 'principal')->first();
+        $deputy = User::query()->where('role', 'deputy_principal')->first();
+        $students = Student::query()->orderBy('id')->take(3)->get();
+
+        if ($students->count() < 2) {
+            return;
+        }
+
+        $cases = [
+            [
+                'subject_type' => 'student',
+                'student_id' => $students[0]->id,
+                'worker_name' => null,
+                'worker_department' => null,
+                'case_title' => 'Late Reporting to Morning Prep',
+                'description' => 'Repeated late reporting to early prep sessions for two weeks.',
+                'status' => 'ongoing',
+                'reported_on' => now()->subDays(6)->toDateString(),
+                'action_taken' => 'Counseling session conducted; guardian informed.',
+                'next_step' => 'Review attendance trend next week.',
+                'handled_by' => $deputy?->id ?? $principal?->id,
+            ],
+            [
+                'subject_type' => 'student',
+                'student_id' => $students[1]->id,
+                'worker_name' => null,
+                'worker_department' => null,
+                'case_title' => 'Uniform Non-Compliance',
+                'description' => 'Student reported multiple times for incomplete school uniform.',
+                'status' => 'pending',
+                'reported_on' => now()->subDays(3)->toDateString(),
+                'action_taken' => null,
+                'next_step' => 'Parent meeting to be scheduled.',
+                'handled_by' => $deputy?->id ?? $principal?->id,
+            ],
+            [
+                'subject_type' => 'worker',
+                'student_id' => null,
+                'worker_name' => 'Kitchen Staff - Rotational Team',
+                'worker_department' => 'Catering',
+                'case_title' => 'Shift Handover Delay',
+                'description' => 'Reported delays during handover affecting breakfast service timelines.',
+                'status' => 'pending',
+                'reported_on' => now()->subDays(2)->toDateString(),
+                'action_taken' => 'Supervisor notified for process correction.',
+                'next_step' => 'Follow-up review with catering supervisor.',
+                'handled_by' => $principal?->id ?? $deputy?->id,
+            ],
+        ];
+
+        foreach ($cases as $case) {
+            DisciplineCase::updateOrCreate(
+                [
+                    'subject_type' => $case['subject_type'],
+                    'case_title' => $case['case_title'],
+                    'reported_on' => $case['reported_on'],
+                ],
+                $case
             );
         }
     }

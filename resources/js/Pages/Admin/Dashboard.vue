@@ -10,17 +10,23 @@ const props = defineProps({
 
 const normalizeRole = (value) => String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
 const role = computed(() => normalizeRole(props.role))
-
 const canSee = (roles) => roles.map(normalizeRole).includes(role.value)
-const canPrint = computed(() => canSee(['principal', 'accountant', 'hod']))
+const canPrint = computed(() => canSee(['principal', 'deputy_principal', 'dean', 'hod', 'accountant']))
 
 const moduleLinks = computed(() =>
   [
-    { key: 'students', label: 'Students', href: route('admin.students.index'), roles: ['principal', 'deputy_principal', 'accountant', 'secretary'] },
-    { key: 'programs', label: 'Programs', href: route('admin.programs.index'), roles: ['principal', 'deputy_principal', 'hod'] },
-    { key: 'exams', label: 'Exams', href: route('admin.exams.index'), roles: ['principal', 'deputy_principal', 'hod'] },
+    { key: 'students', label: 'Students', href: route('admin.students.index'), roles: ['principal', 'deputy_principal', 'dean', 'accountant', 'secretary'] },
+    { key: 'programs', label: 'Programs', href: route('admin.programs.index'), roles: ['principal', 'deputy_principal', 'dean', 'hod'] },
+    { key: 'exams', label: 'Exams', href: route('admin.exams.index'), roles: ['principal', 'deputy_principal', 'dean', 'hod'] },
+    { key: 'staff', label: 'Staff', href: route('admin.staff.index'), roles: ['principal', 'deputy_principal'] },
     { key: 'finance', label: 'Finance', href: route('admin.finance.index'), roles: ['principal', 'accountant'] },
+    { key: 'student_finance', label: 'Student Finance', href: route('admin.student-finance.index'), roles: ['principal', 'accountant'] },
     { key: 'store', label: 'Store', href: route('admin.store.index'), roles: ['principal', 'accountant', 'store_keeper'] },
+    { key: 'timetable', label: 'Timetable', href: route('admin.timetable.index'), roles: ['principal', 'deputy_principal', 'dean'] },
+    { key: 'parents', label: 'Parents', href: route('admin.parents.index'), roles: ['principal', 'secretary', 'dean'] },
+    { key: 'sports', label: 'Sports Dept', href: route('admin.sports.index'), roles: ['principal', 'deputy_principal', 'dean', 'hod'] },
+    { key: 'discipline', label: 'Discipline', href: route('admin.discipline.index'), roles: ['principal', 'deputy_principal', 'dean'] },
+    { key: 'communications', label: 'Messages', href: route('admin.communications.index'), roles: ['principal', 'deputy_principal', 'secretary', 'dean'] },
   ].filter((item) => canSee(item.roles))
 )
 
@@ -50,11 +56,7 @@ const printDashboard = () => {
       </div>
 
       <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <div
-          v-for="card in cards"
-          :key="card.title"
-          class="border border-slate-200 bg-white p-5"
-        >
+        <div v-for="card in cards" :key="card.title" class="border border-slate-200 bg-white p-5">
           <p class="text-xs uppercase tracking-wide text-slate-500">{{ card.title }}</p>
           <p class="mt-2 text-3xl font-semibold text-slate-900">{{ card.value }}</p>
           <p class="mt-2 text-sm text-slate-500">{{ card.hint }}</p>
@@ -63,9 +65,7 @@ const printDashboard = () => {
 
       <div class="border border-slate-200 bg-white p-5">
         <h2 class="text-lg font-semibold text-slate-900">Quick Access</h2>
-        <p class="mt-1 text-sm text-slate-600">
-          Open authorized modules below. Create, update, and delete actions are inside each module page.
-        </p>
+        <p class="mt-1 text-sm text-slate-600">Open authorized modules below.</p>
 
         <div class="mt-4 flex flex-wrap gap-3 no-print">
           <Link
@@ -77,23 +77,7 @@ const printDashboard = () => {
             Open {{ item.label }}
           </Link>
         </div>
-
-        <div v-if="!moduleLinks.length" class="mt-4 text-sm text-slate-500 no-print">
-          No modules are assigned to this role yet.
-        </div>
-
-        <div class="mt-4 hidden print:block">
-          <ul class="list-disc pl-5 text-sm text-slate-700">
-            <li v-for="item in moduleLinks" :key="`print-${item.key}`">
-              {{ item.label }}
-            </li>
-          </ul>
-        </div>
       </div>
-
-      <p class="hidden text-xs text-slate-500 print:block">
-        Printed by role: {{ role }} | Generated at: {{ new Date().toLocaleString() }}
-      </p>
     </div>
   </AdminLayout>
 </template>
@@ -105,14 +89,6 @@ const printDashboard = () => {
   }
 
   .no-print {
-    display: none !important;
-  }
-
-  .print\:block {
-    display: block !important;
-  }
-
-  .print\:hidden {
     display: none !important;
   }
 }
