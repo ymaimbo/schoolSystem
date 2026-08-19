@@ -13,6 +13,7 @@ class StudentFeeAccount extends Model
 
     protected $fillable = [
         'student_id',
+        'fee_structure_id',
         'total_fee_due',
         'sponsor_org_name',
         'sponsor_org_id',
@@ -28,8 +29,18 @@ class StudentFeeAccount extends Model
         return $this->belongsTo(Student::class);
     }
 
+    public function feeStructure(): BelongsTo
+    {
+        return $this->belongsTo(FeeStructure::class);
+    }
+
     public function payments(): HasMany
     {
         return $this->hasMany(StudentFeePayment::class);
+    }
+
+    public function ledgers(): HasMany
+    {
+        return $this->hasMany(StudentFeeLedger::class, 'student_fee_account_id');
     }
 }

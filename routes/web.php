@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\AdminDashboardController;
 use App\Http\Controllers\Admin\DisciplineDepartmentController;
 use App\Http\Controllers\Admin\ExamController;
+use App\Http\Controllers\Admin\FeeStructureController;
 use App\Http\Controllers\Admin\FinanceController;
 use App\Http\Controllers\Admin\ParentCommunicationController;
 use App\Http\Controllers\Admin\ParentGuardianController;
@@ -37,7 +38,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::post('/students', [StudentController::class, 'store'])->name('students.store');
         });
 
-        // accountant removed from update/delete
         Route::middleware('role:principal,deputy_principal,dean')->group(function () {
             Route::put('/students/{student}', [StudentController::class, 'update'])->name('students.update');
             Route::delete('/students/{student}', [StudentController::class, 'destroy'])->name('students.destroy');
@@ -59,17 +59,33 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::delete('/exam-results/{examResult}', [ExamController::class, 'destroyResult'])->name('exam-results.destroy');
         });
 
-        // finance still principal + accountant only
+        // Finance + vouchers + fee structures + student finance
         Route::middleware('role:principal,accountant')->group(function () {
+            // Finance transactions
             Route::get('/finance', [FinanceController::class, 'index'])->name('finance.index');
             Route::post('/finance', [FinanceController::class, 'store'])->name('finance.store');
             Route::put('/finance/{financeTransaction}', [FinanceController::class, 'update'])->name('finance.update');
             Route::delete('/finance/{financeTransaction}', [FinanceController::class, 'destroy'])->name('finance.destroy');
 
+            // Finance vouchers (moved from student finance)
+            Route::post('/finance/voucher', [FinanceController::class, 'storeVoucher'])->name('finance.voucher.store');
+            Route::delete('/finance/voucher/{voucher}', [FinanceController::class, 'destroyVoucher'])->name('finance.voucher.destroy');
+            Route::get('/finance/voucher/{voucher}/print', [FinanceController::class, 'printVoucher'])->name('finance.voucher.print');
+
+            // Fee structures (vote heads)
+            Route::get('/finance/fee-structures', [FeeStructureController::class, 'index'])->name('finance.fee-structures.index');
+            Route::post('/finance/fee-structures', [FeeStructureController::class, 'store'])->name('finance.fee-structures.store');
+            Route::get('/finance/fee-structures/{feeStructure}/edit', [FeeStructureController::class, 'edit'])->name('finance.fee-structures.edit');
+            Route::put('/finance/fee-structures/{feeStructure}', [FeeStructureController::class, 'update'])->name('finance.fee-structures.update');
+            Route::delete('/finance/fee-structures/{feeStructure}', [FeeStructureController::class, 'destroy'])->name('finance.fee-structures.destroy');
+
+            // Student finance
             Route::get('/student-finance', [StudentFinanceController::class, 'index'])->name('student-finance.index');
             Route::post('/student-finance/account', [StudentFinanceController::class, 'upsertAccount'])->name('student-finance.account.upsert');
             Route::post('/student-finance/payment', [StudentFinanceController::class, 'storePayment'])->name('student-finance.payment.store');
             Route::delete('/student-finance/payment/{payment}', [StudentFinanceController::class, 'destroyPayment'])->name('student-finance.payment.destroy');
+            Route::get('/student-finance/receipt/{payment}', [StudentFinanceController::class, 'printReceipt'])->name('student-finance.receipt.print');
+            Route::get('/student-finance/statement/{student}', [StudentFinanceController::class, 'printStudentStatement'])->name('student-finance.statement.print');
         });
 
         Route::middleware('role:principal,accountant,store_keeper')->group(function () {
@@ -101,7 +117,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::delete('/sports/{record}', [SportsDepartmentController::class, 'destroy'])->name('sports.destroy');
         });
 
-        // principal has same rights as deputy on discipline
         Route::middleware('role:principal,deputy_principal,dean')->group(function () {
             Route::get('/discipline', [DisciplineDepartmentController::class, 'index'])->name('discipline.index');
             Route::post('/discipline', [DisciplineDepartmentController::class, 'store'])->name('discipline.store');
@@ -115,7 +130,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::post('/communications/results', [ParentCommunicationController::class, 'sendResults'])->name('communications.results');
         });
 
-        // Deputy + Principal staff/worker records and duty lists
         Route::middleware('role:principal,deputy_principal')->group(function () {
             Route::get('/staff', [StaffDirectoryController::class, 'index'])->name('staff.index');
             Route::post('/staff', [StaffDirectoryController::class, 'store'])->name('staff.store');
@@ -125,4 +139,4 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
 });
 
-require __DIR__ . '/auth.php';
+require __DIR__.'/auth.php';

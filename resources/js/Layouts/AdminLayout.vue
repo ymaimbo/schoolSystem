@@ -1,70 +1,51 @@
 <script setup>
+import { Link, usePage } from '@inertiajs/vue3'
 import { computed } from 'vue'
-import { Link, useForm, usePage } from '@inertiajs/vue3'
 
 const page = usePage()
 
-const normalizeRole = (value) => String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+const nav = computed(() => [
+  { label: 'Dashboard', href: route('admin.dashboard') },
 
-const authUser = computed(() => page.props.auth?.user ?? null)
-const pageRole = computed(() => normalizeRole(page.props.role ?? ''))
-const role = computed(() => normalizeRole(authUser.value?.role ?? pageRole.value))
+  { label: 'Students', href: route('admin.students.index') },
+  { label: 'Student Finance', href: route('admin.student-finance.index') },
 
-const logoutForm = useForm({})
-const canSee = (roles) => roles.map(normalizeRole).includes(role.value)
+  { label: 'Finance', href: route('admin.finance.index') },
+  { label: 'Fee Structures', href: route('admin.finance.fee-structures.index') },
 
-const doLogout = () => {
-  logoutForm.post('/logout')
-}
+  { label: 'Store', href: route('admin.store.index') },
+  { label: 'Timetable', href: route('admin.timetable.index') },
+  { label: 'Parents', href: route('admin.parents.index') },
+  { label: 'Sports', href: route('admin.sports.index') },
+  { label: 'Discipline', href: route('admin.discipline.index') },
+  { label: 'Communications', href: route('admin.communications.index') },
+  { label: 'Staff', href: route('admin.staff.index') },
+])
+
+const isActive = (href) => page.url === new URL(href, window.location.origin).pathname
 </script>
 
 <template>
-  <div class="min-h-screen bg-slate-100 text-slate-900">
-    <header class="border-b bg-slate-900 text-white">
-      <div class="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-        <div>
-          <p class="text-sm uppercase tracking-[0.2em] text-amber-300">Vigurungani Admin</p>
-          <p class="text-xs text-slate-300">{{ authUser?.name || 'Guest' }} ({{ role || 'guest' }})</p>
-        </div>
-
-        <nav class="flex flex-wrap items-center gap-4 text-sm">
-          <Link :href="route('admin.dashboard')" class="hover:text-amber-300">Dashboard</Link>
-
-          <Link v-if="canSee(['principal','deputy_principal','dean','accountant','secretary'])" :href="route('admin.students.index')" class="hover:text-amber-300">Students</Link>
-          <Link v-if="canSee(['principal','deputy_principal','dean','hod'])" :href="route('admin.programs.index')" class="hover:text-amber-300">Programs</Link>
-          <Link v-if="canSee(['principal','deputy_principal','dean','hod'])" :href="route('admin.exams.index')" class="hover:text-amber-300">Exams</Link>
-
-          <Link v-if="canSee(['principal','deputy_principal'])" :href="route('admin.staff.index')" class="hover:text-amber-300">Staff</Link>
-
-          <Link v-if="canSee(['principal','accountant'])" :href="route('admin.finance.index')" class="hover:text-amber-300">Finance</Link>
-          <Link v-if="canSee(['principal','accountant'])" :href="route('admin.student-finance.index')" class="hover:text-amber-300">Student Finance</Link>
-
-          <Link v-if="canSee(['principal','accountant','store_keeper'])" :href="route('admin.store.index')" class="hover:text-amber-300">Store</Link>
-          <Link v-if="canSee(['principal','deputy_principal','dean'])" :href="route('admin.timetable.index')" class="hover:text-amber-300">Timetable</Link>
-          <Link v-if="canSee(['principal','secretary','dean'])" :href="route('admin.parents.index')" class="hover:text-amber-300">Parents</Link>
-          <Link v-if="canSee(['principal','deputy_principal','dean','hod'])" :href="route('admin.sports.index')" class="hover:text-amber-300">Sports Dept</Link>
-          <Link v-if="canSee(['principal','deputy_principal','dean'])" :href="route('admin.discipline.index')" class="hover:text-amber-300">Discipline</Link>
-          <Link v-if="canSee(['principal','deputy_principal','secretary','dean'])" :href="route('admin.communications.index')" class="hover:text-amber-300">Messages</Link>
-
-          <Link :href="route('home')" class="hover:text-amber-300">Website</Link>
-
-          <button
-            v-if="authUser"
-            type="button"
-            class="rounded border border-white/30 px-3 py-1 hover:bg-white/10"
-            :disabled="logoutForm.processing"
-            @click="doLogout"
+  <div class="min-h-screen bg-slate-100">
+    <div class="mx-auto flex max-w-[1600px]">
+      <aside class="hidden w-64 shrink-0 border-r border-slate-200 bg-white p-4 lg:block">
+        <h2 class="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">Admin Menu</h2>
+        <nav class="space-y-1">
+          <Link
+            v-for="item in nav"
+            :key="item.label"
+            :href="item.href"
+            class="block rounded px-3 py-2 text-sm"
+            :class="isActive(item.href) ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'"
           >
-            {{ logoutForm.processing ? 'Logging out...' : 'Logout' }}
-          </button>
-
-          <Link v-else :href="route('login')" class="rounded border border-white/30 px-3 py-1 hover:bg-white/10">Login</Link>
+            {{ item.label }}
+          </Link>
         </nav>
-      </div>
-    </header>
+      </aside>
 
-    <main class="mx-auto max-w-7xl px-6 py-8">
-      <slot />
-    </main>
+      <main class="min-w-0 flex-1 p-4 lg:p-6">
+        <slot />
+      </main>
+    </div>
   </div>
 </template>

@@ -12,6 +12,8 @@ class DatabaseSeeder extends Seeder
             AdminUsersSeeder::class,
             VigurunganiSchoolSeeder::class,
             SchoolOperationsSeeder::class,
+            VoteHeadSeeder::class,
+            FeeStructureSeeder::class,
         ]);
     }
 }

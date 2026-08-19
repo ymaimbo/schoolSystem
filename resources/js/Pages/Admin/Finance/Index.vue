@@ -1,215 +1,408 @@
 <script setup>
 import AdminLayout from '@/Layouts/AdminLayout.vue'
-import { Head, router, useForm } from '@inertiajs/vue3'
+import { Head, Link, router, useForm } from '@inertiajs/vue3'
 import { computed, ref } from 'vue'
 
 const props = defineProps({
-  transactions: { type: Object, default: () => ({ data: [], links: [] }) },
-  totals: { type: Object, default: () => ({ income: 0, expense: 0, balance: 0 }) },
-  overall: { type: Object, default: () => ({ income: 0, expense: 0 }) },
-  filters: { type: Object, default: () => ({ type: '', category: '', from: '', to: '', payment_method: '' }) },
+  transactions: { type: Object, default: () => ({ data: [] }) },
+  vouchers: { type: Object, default: () => ({ data: [] }) },
+  summary: { type: Object, default: () => ({ income: 0, expense: 0, balance: 0 }) },
+  searchVoucher: { type: String, default: '' },
+  paymentMethods: { type: Array, default: () => [] },
+  voucherMethods: { type: Array, default: () => [] },
 })
 
-const filterForm = useForm({
-  type: props.filters.type ?? '',
-  category: props.filters.category ?? '',
-  from: props.filters.from ?? '',
-  to: props.filters.to ?? '',
-  payment_method: props.filters.payment_method ?? '',
-})
-
-const createForm = useForm({
+const txForm = useForm({
   entry_date: new Date().toISOString().slice(0, 10),
   type: 'income',
   category: '',
   description: '',
   amount: '',
-  payment_method: '',
+  payment_method: 'bank',
   reference_no: '',
 })
 
-const editOpen = ref(false)
-const editId = ref(null)
-const editForm = useForm({
-  entry_date: '',
-  type: 'income',
-  category: '',
-  description: '',
+const voucherForm = useForm({
+  supplier_name: '',
+  supplier_id: '',
+  purpose: '',
   amount: '',
-  payment_method: '',
-  reference_no: '',
+  payment_method: 'bank',
+  paid_at: new Date().toISOString().slice(0, 10),
+  notes: '',
 })
 
-const links = computed(() =>
-  (props.transactions.links ?? []).map((l) => ({
-    ...l,
-    label: String(l.label).replace('&laquo;', '«').replace('&raquo;', '»'),
-  })),
-)
+const voucherSearchForm = useForm({
+  search_voucher: props.searchVoucher || '',
+})
 
-const formatKES = (v) => `KES ${Number(v || 0).toLocaleString()}`
+const transactionSearch = ref('')
 
-const applyFilters = () => {
-  router.get(route('admin.finance.index'), filterForm.data(), { preserveState: true, replace: true })
-}
+const transactionRows = computed(() => {
+  const rows = Array.isArray(props.transactions?.data) ? props.transactions.data : []
+  const q = transactionSearch.value.trim().toLowerCase()
 
-const clearFilters = () => {
-  filterForm.reset()
-  applyFilters()
-}
+  if (!q) return rows
 
-const submitCreate = () => {
-  createForm.post(route('admin.finance.store'), {
+  return rows.filter((tx) => {
+    const referenceNo = String(tx?.reference_no || '').toLowerCase()
+    const category = String(tx?.category || '').toLowerCase()
+    const description = String(tx?.description || '').toLowerCase()
+    const type = String(tx?.type || '').toLowerCase()
+
+    return (
+      referenceNo.includes(q)
+      || category.includes(q)
+      || description.includes(q)
+      || type.includes(q)
+    )
+  })
+})
+
+const saveTransaction = () => {
+  txForm.post(route('admin.finance.store'), {
     preserveScroll: true,
-    onSuccess: () => createForm.reset('category', 'description', 'amount', 'payment_method', 'reference_no'),
+    onSuccess: () => txForm.reset('category', 'description', 'amount', 'reference_no'),
   })
 }
 
-const openEdit = (tx) => {
-  editId.value = tx.id
-  editForm.entry_date = tx.entry_date ?? ''
-  editForm.type = tx.type ?? 'income'
-  editForm.category = tx.category ?? ''
-  editForm.description = tx.description ?? ''
-  editForm.amount = tx.amount ?? ''
-  editForm.payment_method = tx.payment_method ?? ''
-  editForm.reference_no = tx.reference_no ?? ''
-  editOpen.value = true
-}
-
-const closeEdit = () => {
-  editOpen.value = false
-  editId.value = null
-  editForm.clearErrors()
-}
-
-const submitEdit = () => {
-  editForm.put(route('admin.finance.update', editId.value), {
+const saveVoucher = () => {
+  voucherForm.post(route('admin.finance.voucher.store'), {
     preserveScroll: true,
-    onSuccess: () => closeEdit(),
+    onSuccess: () => voucherForm.reset('supplier_name', 'supplier_id', 'purpose', 'amount', 'notes'),
   })
 }
 
-const removeTx = (id) => {
+const applyVoucherSearch = () => {
+  router.get(
+    route('admin.finance.index'),
+    { search_voucher: voucherSearchForm.search_voucher },
+    { preserveState: true, replace: true, preserveScroll: true },
+  )
+}
+
+const clearVoucherSearch = () => {
+  voucherSearchForm.search_voucher = ''
+  applyVoucherSearch()
+}
+
+const clearTransactionSearch = () => {
+  transactionSearch.value = ''
+}
+
+const deleteVoucher = (id) => {
+  if (!confirm('Delete this voucher?')) return
+  useForm({}).delete(route('admin.finance.voucher.destroy', id), { preserveScroll: true })
+}
+
+const deleteTransaction = (id) => {
   if (!confirm('Delete this transaction?')) return
-  router.delete(route('admin.finance.destroy', id), { preserveScroll: true })
-}
-
-const printPage = () => {
-  window.print()
+  useForm({}).delete(route('admin.finance.destroy', id), { preserveScroll: true })
 }
 </script>
 
 <template>
   <Head title="Finance" />
+
   <AdminLayout>
-    <div class="space-y-6">
-      <div class="flex items-center justify-between">
-        <h1 class="text-2xl font-bold text-slate-900">Finance Report</h1>
-        <button type="button" class="no-print border px-4 py-2 text-sm font-medium hover:bg-slate-50" @click="printPage">
-          Print Financial Report
-        </button>
-      </div>
-
-      <div class="grid gap-3 sm:grid-cols-3">
-        <div class="border bg-white p-4"><p class="text-xs text-slate-500">Income</p><p class="text-2xl font-semibold text-emerald-700">{{ formatKES(totals.income) }}</p></div>
-        <div class="border bg-white p-4"><p class="text-xs text-slate-500">Expense</p><p class="text-2xl font-semibold text-rose-700">{{ formatKES(totals.expense) }}</p></div>
-        <div class="border bg-white p-4"><p class="text-xs text-slate-500">Balance</p><p class="text-2xl font-semibold">{{ formatKES(totals.balance) }}</p></div>
-      </div>
-
-      <form class="no-print grid gap-3 border bg-white p-4 md:grid-cols-6" @submit.prevent="applyFilters">
-        <select v-model="filterForm.type" class="border px-3 py-2"><option value="">All Types</option><option value="income">income</option><option value="expense">expense</option></select>
-        <input v-model="filterForm.category" class="border px-3 py-2" placeholder="Category" />
-        <input v-model="filterForm.payment_method" class="border px-3 py-2" placeholder="Payment Method" />
-        <input v-model="filterForm.from" type="date" class="border px-3 py-2" />
-        <input v-model="filterForm.to" type="date" class="border px-3 py-2" />
-        <div class="flex gap-2">
-          <button class="w-full bg-slate-900 px-4 py-2 text-white">Filter</button>
-          <button type="button" class="w-full border px-4 py-2" @click="clearFilters">Clear</button>
+    <div class="space-y-8">
+      <section class="grid gap-4 md:grid-cols-3">
+        <div class="rounded border border-slate-200 bg-white p-4">
+          <p class="text-xs uppercase tracking-wide text-slate-500">Finance Income</p>
+          <p class="mt-2 text-2xl font-semibold text-slate-900">
+            {{ Number(summary.income).toLocaleString() }}
+          </p>
         </div>
-      </form>
+        <div class="rounded border border-slate-200 bg-white p-4">
+          <p class="text-xs uppercase tracking-wide text-slate-500">Finance Expense</p>
+          <p class="mt-2 text-2xl font-semibold text-slate-900">
+            {{ Number(summary.expense).toLocaleString() }}
+          </p>
+        </div>
+        <div class="rounded border border-slate-200 bg-white p-4">
+          <p class="text-xs uppercase tracking-wide text-slate-500">Finance Balance</p>
+          <p class="mt-2 text-2xl font-semibold text-slate-900">
+            {{ Number(summary.balance).toLocaleString() }}
+          </p>
+        </div>
+      </section>
 
-      <form class="no-print grid gap-3 border bg-white p-4 md:grid-cols-3" @submit.prevent="submitCreate">
-        <input v-model="createForm.entry_date" type="date" class="border px-3 py-2" />
-        <select v-model="createForm.type" class="border px-3 py-2"><option value="income">income</option><option value="expense">expense</option></select>
-        <input v-model="createForm.category" class="border px-3 py-2" placeholder="Category" />
-        <input v-model="createForm.amount" type="number" step="0.01" class="border px-3 py-2" placeholder="Amount" />
-        <input v-model="createForm.payment_method" class="border px-3 py-2" placeholder="Payment Method" />
-        <input v-model="createForm.reference_no" class="border px-3 py-2" placeholder="Reference No" />
-        <textarea v-model="createForm.description" rows="2" class="border px-3 py-2 md:col-span-3" placeholder="Description" />
-        <button class="bg-slate-900 px-4 py-2 text-white md:col-span-3">Add Transaction</button>
-      </form>
+      <section class="grid gap-6 lg:grid-cols-2">
+        <form class="space-y-3 rounded border border-slate-200 bg-white p-5" @submit.prevent="saveTransaction">
+          <h2 class="text-lg font-semibold">Add Finance Transaction</h2>
 
-      <div class="overflow-x-auto border bg-white">
-        <table class="min-w-full text-sm">
-          <thead class="bg-slate-50">
-            <tr>
-              <th class="px-3 py-2 text-left">Date</th>
-              <th class="px-3 py-2 text-left">Type</th>
-              <th class="px-3 py-2 text-left">Category</th>
-              <th class="px-3 py-2 text-left">Amount</th>
-              <th class="px-3 py-2 text-left">Payment</th>
-              <th class="px-3 py-2 text-left">Reference</th>
-              <th class="px-3 py-2 text-left">Description</th>
-              <th class="no-print px-3 py-2 text-left">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="tx in transactions.data" :key="tx.id" class="border-t">
-              <td class="px-3 py-2">{{ tx.entry_date }}</td>
-              <td class="px-3 py-2">{{ tx.type }}</td>
-              <td class="px-3 py-2">{{ tx.category }}</td>
-              <td class="px-3 py-2">{{ formatKES(tx.amount) }}</td>
-              <td class="px-3 py-2">{{ tx.payment_method || '-' }}</td>
-              <td class="px-3 py-2">{{ tx.reference_no || '-' }}</td>
-              <td class="px-3 py-2">{{ tx.description || '-' }}</td>
-              <td class="no-print px-3 py-2">
-                <button class="mr-3 text-blue-700" @click="openEdit(tx)">Edit</button>
-                <button class="text-rose-700" @click="removeTx(tx.id)">Delete</button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+          <input
+            v-model="txForm.entry_date"
+            type="date"
+            class="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+          />
 
-      <div class="no-print flex flex-wrap gap-2">
-        <button
-          v-for="l in links"
-          :key="l.label + String(l.url)"
-          class="border px-3 py-1 text-sm"
-          :class="l.active ? 'bg-slate-900 text-white' : 'bg-white'"
-          :disabled="!l.url"
-          @click="l.url && router.visit(l.url, { preserveState: true, preserveScroll: true })"
-          v-html="l.label"
-        />
-      </div>
-    </div>
+          <select
+            v-model="txForm.type"
+            class="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+          >
+            <option value="income">income</option>
+            <option value="expense">expense</option>
+          </select>
 
-    <div v-if="editOpen" class="no-print fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div class="w-full max-w-2xl border bg-white p-5">
-        <h2 class="text-lg font-semibold">Edit Transaction</h2>
-        <form class="mt-4 grid gap-3 md:grid-cols-2" @submit.prevent="submitEdit">
-          <input v-model="editForm.entry_date" type="date" class="border px-3 py-2" />
-          <select v-model="editForm.type" class="border px-3 py-2"><option value="income">income</option><option value="expense">expense</option></select>
-          <input v-model="editForm.category" class="border px-3 py-2" placeholder="Category" />
-          <input v-model="editForm.amount" type="number" step="0.01" class="border px-3 py-2" placeholder="Amount" />
-          <input v-model="editForm.payment_method" class="border px-3 py-2" placeholder="Payment Method" />
-          <input v-model="editForm.reference_no" class="border px-3 py-2" placeholder="Reference No" />
-          <textarea v-model="editForm.description" rows="2" class="border px-3 py-2 md:col-span-2" placeholder="Description" />
-          <div class="md:col-span-2 flex justify-end gap-2">
-            <button type="button" class="border px-4 py-2" @click="closeEdit">Cancel</button>
-            <button class="bg-slate-900 px-4 py-2 text-white">Save</button>
-          </div>
+          <input
+            v-model="txForm.category"
+            type="text"
+            placeholder="Category"
+            class="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+          />
+
+          <input
+            v-model="txForm.description"
+            type="text"
+            placeholder="Description"
+            class="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+          />
+
+          <input
+            v-model="txForm.amount"
+            type="number"
+            step="0.01"
+            min="0.01"
+            placeholder="Amount"
+            class="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+          />
+
+          <select
+            v-model="txForm.payment_method"
+            class="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+          >
+            <option v-for="method in paymentMethods" :key="method" :value="method">
+              {{ method }}
+            </option>
+          </select>
+
+          <input
+            v-model="txForm.reference_no"
+            type="text"
+            placeholder="Reference No / Receipt No (optional)"
+            class="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+          />
+
+          <button
+            class="rounded border border-slate-900 bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800"
+          >
+            Save Transaction
+          </button>
         </form>
-      </div>
+
+        <form class="space-y-3 rounded border border-slate-200 bg-white p-5" @submit.prevent="saveVoucher">
+          <h2 class="text-lg font-semibold">Create Payment Voucher (Finance)</h2>
+          <p class="text-xs text-slate-500">
+            Voucher number is generated automatically and Principal is auto-approver.
+          </p>
+
+          <input
+            v-model="voucherForm.supplier_name"
+            type="text"
+            placeholder="Supplier / Payee Name"
+            class="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+          />
+
+          <input
+            v-model="voucherForm.supplier_id"
+            type="text"
+            placeholder="Supplier / Payee ID (optional)"
+            class="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+          />
+
+          <input
+            v-model="voucherForm.purpose"
+            type="text"
+            placeholder="Purpose"
+            class="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+          />
+
+          <input
+            v-model="voucherForm.amount"
+            type="number"
+            step="0.01"
+            min="0.01"
+            placeholder="Amount"
+            class="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+          />
+
+          <select
+            v-model="voucherForm.payment_method"
+            class="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+          >
+            <option v-for="method in voucherMethods" :key="method" :value="method">
+              {{ method }}
+            </option>
+          </select>
+
+          <input
+            v-model="voucherForm.paid_at"
+            type="date"
+            class="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+          />
+
+          <textarea
+            v-model="voucherForm.notes"
+            rows="3"
+            placeholder="Notes"
+            class="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+          />
+
+          <button
+            class="rounded border border-slate-900 bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800"
+          >
+            Create Voucher
+          </button>
+        </form>
+      </section>
+
+      <section class="rounded border border-slate-200 bg-white p-5">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 class="text-lg font-semibold">Payment Vouchers</h2>
+            <p class="text-xs text-slate-500">Search by voucher number and print official voucher format.</p>
+          </div>
+
+          <div class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <input
+              v-model="voucherSearchForm.search_voucher"
+              type="text"
+              placeholder="Search voucher number"
+              class="w-full rounded border border-slate-300 px-3 py-2 text-sm sm:w-72"
+              @keyup.enter="applyVoucherSearch"
+            />
+            <button
+              type="button"
+              class="rounded border border-slate-900 bg-slate-900 px-4 py-2 text-sm text-white"
+              @click="applyVoucherSearch"
+            >
+              Search
+            </button>
+            <button
+              type="button"
+              class="rounded border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700"
+              @click="clearVoucherSearch"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+
+        <div class="mt-4 overflow-x-auto">
+          <table class="min-w-full text-sm">
+            <thead class="bg-slate-50 text-left text-slate-700">
+              <tr>
+                <th class="px-4 py-3">Voucher #</th>
+                <th class="px-4 py-3">Payee</th>
+                <th class="px-4 py-3">Purpose</th>
+                <th class="px-4 py-3">Amount</th>
+                <th class="px-4 py-3">Method</th>
+                <th class="px-4 py-3">Date</th>
+                <th class="px-4 py-3">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="voucher in vouchers.data" :key="voucher.id" class="border-t border-slate-100">
+                <td class="px-4 py-3 font-medium">{{ voucher.voucher_no }}</td>
+                <td class="px-4 py-3">{{ voucher.supplier_name }}</td>
+                <td class="px-4 py-3">{{ voucher.purpose }}</td>
+                <td class="px-4 py-3">{{ Number(voucher.amount).toLocaleString() }}</td>
+                <td class="px-4 py-3">{{ voucher.payment_method }}</td>
+                <td class="px-4 py-3">{{ voucher.paid_at }}</td>
+                <td class="px-4 py-3">
+                  <div class="flex gap-3">
+                    <Link
+                      :href="route('admin.finance.voucher.print', voucher.id)"
+                      target="_blank"
+                      class="text-sky-700 hover:underline"
+                    >
+                      Print
+                    </Link>
+                    <button
+                      type="button"
+                      class="text-rose-600 hover:underline"
+                      @click="deleteVoucher(voucher.id)"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              <tr v-if="!vouchers.data?.length">
+                <td colspan="7" class="px-4 py-6 text-center text-slate-500">No vouchers found.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="rounded border border-slate-200 bg-white p-5">
+        <div class="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 class="text-lg font-semibold">Recent Finance Transactions</h2>
+            <p class="text-xs text-slate-500">Search by receipt/reference number, category, or description.</p>
+          </div>
+
+          <div class="flex gap-2">
+            <input
+              v-model="transactionSearch"
+              type="text"
+              placeholder="Search receipt/reference no"
+              class="w-full rounded border border-slate-300 px-3 py-2 text-sm sm:w-80"
+            />
+            <button
+              type="button"
+              class="rounded border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700"
+              @click="clearTransactionSearch"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="min-w-full text-sm">
+            <thead class="bg-slate-50 text-left text-slate-700">
+              <tr>
+                <th class="px-4 py-3">Date</th>
+                <th class="px-4 py-3">Type</th>
+                <th class="px-4 py-3">Category</th>
+                <th class="px-4 py-3">Description</th>
+                <th class="px-4 py-3">Amount</th>
+                <th class="px-4 py-3">Method</th>
+                <th class="px-4 py-3">Ref / Receipt</th>
+                <th class="px-4 py-3">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="tx in transactionRows" :key="tx.id" class="border-t border-slate-100">
+                <td class="px-4 py-3">{{ tx.entry_date }}</td>
+                <td class="px-4 py-3 capitalize">{{ tx.type }}</td>
+                <td class="px-4 py-3">{{ tx.category }}</td>
+                <td class="px-4 py-3">{{ tx.description }}</td>
+                <td class="px-4 py-3">{{ Number(tx.amount).toLocaleString() }}</td>
+                <td class="px-4 py-3">{{ tx.payment_method }}</td>
+                <td class="px-4 py-3">{{ tx.reference_no || '-' }}</td>
+                <td class="px-4 py-3">
+                  <button
+                    type="button"
+                    class="text-rose-600 hover:underline"
+                    @click="deleteTransaction(tx.id)"
+                  >
+                    Delete
+                  </button>
+                </td>
+              </tr>
+              <tr v-if="!transactionRows.length">
+                <td colspan="8" class="px-4 py-6 text-center text-slate-500">
+                  No transactions found for this search.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   </AdminLayout>
 </template>
-
-<style scoped>
-@media print {
-  .no-print {
-    display: none !important;
-  }
-}
-</style>
