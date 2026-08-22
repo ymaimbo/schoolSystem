@@ -9,7 +9,7 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $this->call([
-            AdminUsersSeeder::class,
+            
             VigurunganiSchoolSeeder::class,
             SchoolOperationsSeeder::class,
             VoteHeadSeeder::class,

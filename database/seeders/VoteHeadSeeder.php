@@ -10,24 +10,27 @@ class VoteHeadSeeder extends Seeder
     public function run(): void
     {
         $voteHeads = [
-            ['code' => 'TLME', 'name' => 'Teaching, Learning Materials and Exams'],
-            ['code' => 'RMI', 'name' => 'RMI'],
-            ['code' => 'LTT', 'name' => 'LT & T'],
-            ['code' => 'ADM', 'name' => 'Administration Costs'],
-            ['code' => 'EWC', 'name' => 'EWC'],
-            ['code' => 'ACT', 'name' => 'Activity'],
-            ['code' => 'PE', 'name' => 'Personal Emoluments'],
-            ['code' => 'MED', 'name' => 'Medical & Insurance'],
-            ['code' => 'SMASSE', 'name' => 'SMASSE'],
-            ['code' => 'PTA', 'name' => 'PTA'],
-            ['code' => 'LUNCH', 'name' => 'Lunch Programme'],
-            ['code' => 'BOARDING', 'name' => 'Boarding & Meals'],
+            ['code' => 'TEACHING',         'name' => 'Teaching, Learning Materials and Exams'],
+            ['code' => 'RMI',              'name' => 'RMI / Remedial'],
+            ['code' => 'LTT',              'name' => 'LT & T'],
+            ['code' => 'ADM',              'name' => 'Administration Costs'],
+            ['code' => 'EWC',              'name' => 'EWC'],
+            ['code' => 'ACTIVITY',         'name' => 'Activity'],
+            ['code' => 'PERSONAL_EMOL',    'name' => 'Personal Emoluments'],
+            ['code' => 'MEDICAL_INSUR',    'name' => 'Medical & Insurance'],
+            ['code' => 'SMASSE',           'name' => 'SMASSE'],
+            ['code' => 'PTA',              'name' => 'PTA'],
+            ['code' => 'LUNCH_PROGRAMME',  'name' => 'Lunch Programme'],
+            ['code' => 'BOARDING_MEALS',   'name' => 'Boarding & Meals'],
         ];
 
-        foreach ($voteHeads as $vh) {
+        foreach ($voteHeads as $row) {
             VoteHead::updateOrCreate(
-                ['code' => $vh['code']],
-                ['name' => $vh['name'], 'is_active' => true]
+                ['code' => $row['code']],
+                [
+                    'name' => $row['name'],
+                    'is_active' => true,
+                ]
             );
         }
     }
