@@ -1,576 +1,312 @@
-Best Go-Live Stack (Laravel + Vue + MySQL)
-
-For your school system, this is the most practical and reliable setup:
-
-Domain: Cloudflare Registrar or Namecheap
-DNS + WAF + CDN: Cloudflare
-App hosting: VPS on Hetzner / DigitalOcean / Vultr
-Server management: Laravel Forge (very easy for Laravel)
-Database: Managed MySQL (DigitalOcean Managed DB or AWS RDS)
-Cache/queues: Redis (managed if possible)
-SSL: Let’s Encrypt (free) + Cloudflare SSL
-Backups: Automated DB backups + offsite backups to S3/R2/B2
-Images/files: Cloudflare R2 or AWS S3 + CDN delivery
-SMS/notifications to parents: Africa’s Talking (great in Kenya) or Twilio
-Where To Buy Domain
-
-Cloudflare Registrar: Lowest markup, very good DNS/security ecosystem.
-Namecheap: Easy UI, common and reliable.
-Porkbun: Good pricing and support.
-Hosting Recommendations
-
-Best value: Hetzner VPS + Laravel Forge.
-Balanced simplicity: DigitalOcean Droplet + Laravel Forge.
-Enterprise: AWS EC2 + RDS + ElastiCache (more complex, higher cost).
-If you want fast launch with low ops burden, use:
-
-DigitalOcean App/Server
-Managed MySQL
-Cloudflare DNS/SSL
-Forge for deployment automation
-SSL
-
-Let’s Encrypt on the Laravel server (free).
-Cloudflare Universal SSL in front (also free).
-Force HTTPS and HSTS in production.
-Backups You Should Have
-
-Daily MySQL snapshot retention (7-30 days).
-Nightly full backup to object storage (R2/S3/B2).
-Weekly restore test on a staging server.
-Keep app files and .env encrypted backup copy.
-Images And File Storage
-
-Store uploads in object storage, not local disk.
-Use Cloudflare R2 or AWS S3.
-Serve through CDN URL for speed.
-Optional optimization: Cloudflare Images or Cloudinary.
-Messaging And Results Delivery
-
-Since your system sends messages/results to parents:
-
-SMS API: Africa’s Talking (strong local support), or Twilio.
-Email fallback: Postmark, Resend, or Brevo.
-Use Laravel Queues for sending jobs.
-Track delivery status in DB (sent, failed, delivered).
-Production Security Minimum
-
-Cloudflare WAF and bot protection.
-Laravel rate limiting on login and messaging endpoints.
-Strong password policy + optional 2FA.
-Role middleware on every admin route.
-Server firewall, fail2ban, regular updates.
-If you want, I can give you a step-by-step deployment checklist for one exact provider combo, for example:
-
-Cloudflare + Namecheap domain
-DigitalOcean + Forge + Managed MySQL
-R2 backups + Africa’s Talking SMS
-That will make your go-live implementation very straightforward.
-
-
-
-
-
-
-Excellent choice. That stack is the right balance of speed and reliability for Laravel + Vue + MySQL.
-
-Recommended Architecture
-
-Domain at Namecheap or Cloudflare Registrar.
-DNS + SSL + WAF on Cloudflare.
-App server on DigitalOcean Droplet (Forge-managed).
-Managed MySQL on DigitalOcean.
-Queue/cache on Redis (DigitalOcean Managed Redis optional).
-File/image storage on DigitalOcean Spaces or Cloudflare R2.
-Deployments via Laravel Forge + GitHub.
-Launch Plan (Fastest Path)
-
-Buy Domain
-
-Buy your domain.
-
-Point nameservers to Cloudflare.
-
-Add A record for app.yourdomain.com to your server IP.
-
-Add CNAME www -> root or preferred host.
-
-Provision Infrastructure
-
-Create a DigitalOcean Droplet: Ubuntu 22.04, 2 vCPU, 4 GB RAM minimum.
-
-Create Managed MySQL cluster.
-
-Create managed Redis (optional but recommended if sending many messages/results).
-
-In Forge, connect DigitalOcean account and provision the server.
-
-Create Site in Forge
-
-Add site in Forge using app.yourdomain.com.
-
-Enable SSL in Forge (Let’s Encrypt).
-
-Set web directory to Laravel public.
-
-Enable queue worker and scheduler in Forge.
-
-Connect Database
-
-In .env, set DB host/user/pass from Managed MySQL.
-
-Add trusted source IP in MySQL firewall (your server).
-
-Run php artisan migrate --force.
-
-Run seeding if needed (php artisan db:seed --class=SchoolOperationsSeeder --force).
-
-Cloudflare SSL/Security
-
-SSL mode: Full (strict).
-
-Always Use HTTPS: ON.
-
-Auto Minify/Caching defaults are fine to start.
-
-Add WAF managed rules and basic rate limit for login routes.
-
-CI/CD Deployment
-
-Push code to GitHub.
-
-In Forge site, connect Git repo + branch.
-
-Deployment script should include:
-
-composer install --no-dev --optimize-autoloader
-
-php artisan migrate --force
-
-npm ci && npm run build (or build in pipeline and upload artifacts)
-
-php artisan config:cache && php artisan route:cache && php artisan view:cache
-
-php artisan queue:restart
-
-Storage and Images
-
-Configure Laravel filesystem for Spaces or R2.
-
-Set FILESYSTEM_DISK=s3.
-
-Store logos/uploads there and serve via CDN URL.
-
-Backups
-
-Enable DigitalOcean Managed MySQL automated backups.
-
-Add daily mysqldump to Spaces/R2 as second backup.
-
-Keep 14-30 days retention.
-
-Parent Messaging/Results
-
-Integrate Africa’s Talking or Twilio.
-
-Send via queued jobs, not sync HTTP requests.
-
-Save delivery status in DB logs.
-
-Go-Live Checks
-
-Test login for each role.
-
-Test role-based access for Store Keeper, Secretary, Deputy Principal.
-
-Test send message + send result to sample parent.
-
-Verify queue worker and scheduler are running.
-
-Verify backups and SSL.
-
-Starting Size and Cost (rough)
-
-Droplet 2vCPU/4GB.
-Managed MySQL basic tier.
-Cloudflare free plan to start.
-Forge subscription.
-Optional Redis and Spaces/R2 as usage grows.
-If you want, next I can give you:
-
-A production-ready Forge deployment script for your exact app.
-A final .env production template (safe fields only).
-A day-1 to day-30 maintenance checklist for your school admin team.
-
-
-
-Forge Deployment Script (Production-Ready)
-Use this in your Forge Site > Deployment Script.
-
+Use this single script on a fresh Ubuntu 22.04/24.04 VPS.
+
+Copy to deploy.sh
+Edit the variables at the top (DOMAIN, APP_DIR, REPO_URL, DB creds, etc.)
+Run with sudo bash deploy.sh
 Bash
 
-cd /home/forge/app.yourdomain.com
+#!/usr/bin/env bash
+set -euo pipefail
 
-echo "Starting deployment..."
+#############################
+# EDIT THESE VARIABLES FIRST
+#############################
+DOMAIN="schoolportal.example.com"
+WWW_DOMAIN="www.schoolportal.example.com"
+APP_DIR="/var/www/vigu"
+REPO_URL="https://github.com/your-org/your-repo.git"
+BRANCH="main"
 
-git pull origin main
+APP_ENV="production"
+APP_NAME="Vigu"
 
-composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
+DB_NAME="vigu_db"
+DB_USER="vigu_user"
+DB_PASS="ChangeThisStrongPassword123!"
 
-php artisan down || true
+# Super admin seeder class (leave empty to skip)
+SUPERADMIN_SEEDER_CLASS="SuperAdminUserSeeder"
 
-php artisan migrate --force
+LETSENCRYPT_EMAIL="admin@example.com"
 
-# Build frontend (Laravel + Vue + Vite)
-npm ci
-npm run build
+# PHP version
+PHP_VERSION="8.3"
 
-php artisan optimize:clear
-php artisan config:cache
-php artisan route:cache
-php artisan view:cache
+#############################
+# SYSTEM PREP
+#############################
+export DEBIAN_FRONTEND=noninteractive
 
-# Storage symlink (safe if already exists)
-php artisan storage:link || true
+apt update -y
+apt upgrade -y
 
-# Restart queues
-php artisan queue:restart
+apt install -y software-properties-common ca-certificates apt-transport-https lsb-release gnupg curl unzip git nginx mysql-server redis-server certbot python3-certbot-nginx
 
-php artisan up
+# PHP (Ondrej PPA)
+add-apt-repository ppa:ondrej/php -y
+apt update -y
+apt install -y \
+  "php${PHP_VERSION}-fpm" \
+  "php${PHP_VERSION}-cli" \
+  "php${PHP_VERSION}-mysql" \
+  "php${PHP_VERSION}-mbstring" \
+  "php${PHP_VERSION}-xml" \
+  "php${PHP_VERSION}-curl" \
+  "php${PHP_VERSION}-zip" \
+  "php${PHP_VERSION}-bcmath" \
+  "php${PHP_VERSION}-intl" \
+  "php${PHP_VERSION}-gd" \
+  "php${PHP_VERSION}-redis"
+
+# Composer
+if ! command -v composer >/dev/null 2>&1; then
+  curl -sS https://getcomposer.org/installer | php
+  mv composer.phar /usr/local/bin/composer
+fi
+
+# Node.js 20
+if ! command -v node >/dev/null 2>&1; then
+  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+  apt install -y nodejs
+fi
+
+#############################
+# DATABASE SETUP
+#############################
+mysql -u root <<MYSQL
+CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';
+GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';
+FLUSH PRIVILEGES;
+MYSQL
+
+#############################
+# APP CODE
+#############################
+mkdir -p "${APP_DIR}"
+chown -R www-data:www-data "${APP_DIR}"
+
+if [ ! -d "${APP_DIR}/.git" ]; then
+  rm -rf "${APP_DIR:?}/"*
+  git clone --branch "${BRANCH}" "${REPO_URL}" "${APP_DIR}"
+else
+  cd "${APP_DIR}"
+  sudo -u www-data git fetch --all
+  sudo -u www-data git checkout "${BRANCH}"
+  sudo -u www-data git pull origin "${BRANCH}"
+fi
+
+cd "${APP_DIR}"
+
+#############################
+# LARAVEL ENV
+#############################
+if [ ! -f ".env" ]; then
+  cp .env.example .env
+fi
+
+# Safe update helper
+set_env() {
+  local key="$1"
+  local value="$2"
+  if grep -q "^${key}=" .env; then
+    sed -i "s|^${key}=.*|${key}=${value}|g" .env
+  else
+    echo "${key}=${value}" >> .env
+  fi
+}
+
+set_env "APP_NAME" "\"${APP_NAME}\""
+set_env "APP_ENV" "${APP_ENV}"
+set_env "APP_DEBUG" "false"
+set_env "APP_URL" "https://${DOMAIN}"
+
+set_env "DB_CONNECTION" "mysql"
+set_env "DB_HOST" "127.0.0.1"
+set_env "DB_PORT" "3306"
+set_env "DB_DATABASE" "${DB_NAME}"
+set_env "DB_USERNAME" "${DB_USER}"
+set_env "DB_PASSWORD" "${DB_PASS}"
+
+set_env "QUEUE_CONNECTION" "database"
+set_env "CACHE_STORE" "file"
+set_env "SESSION_DRIVER" "database"
+
+# Mail placeholders: update with your real provider after deployment
+set_env "MAIL_MAILER" "smtp"
+set_env "MAIL_HOST" "smtp.example.com"
+set_env "MAIL_PORT" "587"
+set_env "MAIL_USERNAME" "your_smtp_username"
+set_env "MAIL_PASSWORD" "your_smtp_password"
+set_env "MAIL_ENCRYPTION" "tls"
+set_env "MAIL_FROM_ADDRESS" "no-reply@${DOMAIN}"
+set_env "MAIL_FROM_NAME" "\"${APP_NAME}\""
+
+#############################
+# DEPENDENCIES + BUILD
+#############################
+sudo -u www-data composer install --no-dev --optimize-autoloader --no-interaction
+
+if [ -f package-lock.json ]; then
+  sudo -u www-data npm ci
+else
+  sudo -u www-data npm install
+fi
+sudo -u www-data npm run build
+
+#############################
+# LARAVEL SETUP
+#############################
+sudo -u www-data php artisan key:generate --force
+sudo -u www-data php artisan migrate --force
+
+# Ensure queue tables exist
+sudo -u www-data php artisan queue:table || true
+sudo -u www-data php artisan queue:failed-table || true
+sudo -u www-data php artisan migrate --force
+
+if [ -n "${SUPERADMIN_SEEDER_CLASS}" ]; then
+  sudo -u www-data php artisan db:seed --class="${SUPERADMIN_SEEDER_CLASS}" --force || true
+fi
+
+sudo -u www-data php artisan storage:link || true
+sudo -u www-data php artisan optimize:clear
+sudo -u www-data php artisan config:cache
+sudo -u www-data php artisan route:cache
+sudo -u www-data php artisan view:cache
+
+chown -R www-data:www-data "${APP_DIR}"
+find "${APP_DIR}" -type f -exec chmod 644 {} \;
+find "${APP_DIR}" -type d -exec chmod 755 {} \;
+chmod -R ug+rwx "${APP_DIR}/storage" "${APP_DIR}/bootstrap/cache"
+
+#############################
+# NGINX
+#############################
+cat >/etc/nginx/sites-available/vigu.conf <<NGINX
+server {
+    listen 80;
+    server_name ${DOMAIN} ${WWW_DOMAIN};
+
+    root ${APP_DIR}/public;
+    index index.php index.html;
+
+    add_header X-Frame-Options "SAMEORIGIN";
+    add_header X-Content-Type-Options "nosniff";
+
+    charset utf-8;
+
+    location / {
+        try_files \$uri \$uri/ /index.php?\$query_string;
+    }
+
+    location = /favicon.ico { access_log off; log_not_found off; }
+    location = /robots.txt  { access_log off; log_not_found off; }
+
+    error_page 404 /index.php;
+
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php${PHP_VERSION}-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME \$realpath_root\$fastcgi_script_name;
+        include fastcgi_params;
+    }
+
+    location ~ /\.(?!well-known).* {
+        deny all;
+    }
+}
+NGINX
+
+ln -sf /etc/nginx/sites-available/vigu.conf /etc/nginx/sites-enabled/vigu.conf
+rm -f /etc/nginx/sites-enabled/default
+nginx -t
+systemctl restart nginx
+systemctl enable nginx
+
+systemctl enable "php${PHP_VERSION}-fpm"
+systemctl restart "php${PHP_VERSION}-fpm"
+
+#############################
+# SSL
+#############################
+certbot --nginx -d "${DOMAIN}" -d "${WWW_DOMAIN}" --non-interactive --agree-tos -m "${LETSENCRYPT_EMAIL}" --redirect
+
+#############################
+# QUEUE WORKER (systemd)
+#############################
+cat >/etc/systemd/system/vigu-queue.service <<SYSTEMD
+[Unit]
+Description=Vigu Laravel Queue Worker
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+Restart=always
+RestartSec=5
+WorkingDirectory=${APP_DIR}
+ExecStart=/usr/bin/php artisan queue:work --queue=emails,default --sleep=3 --tries=3 --timeout=120 --max-time=3600
+StandardOutput=append:/var/log/vigu-queue.log
+StandardError=append:/var/log/vigu-queue-error.log
+
+[Install]
+WantedBy=multi-user.target
+SYSTEMD
+
+systemctl daemon-reload
+systemctl enable vigu-queue
+systemctl restart vigu-queue
+
+#############################
+# SCHEDULER (systemd timer)
+#############################
+cat >/etc/systemd/system/vigu-scheduler.service <<SYSTEMD
+[Unit]
+Description=Run Laravel Scheduler
+
+[Service]
+Type=oneshot
+User=www-data
+Group=www-data
+WorkingDirectory=${APP_DIR}
+ExecStart=/usr/bin/php artisan schedule:run
+SYSTEMD
+
+cat >/etc/systemd/system/vigu-scheduler.timer <<SYSTEMD
+[Unit]
+Description=Run Laravel Scheduler Every Minute
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+Unit=vigu-scheduler.service
+
+[Install]
+WantedBy=timers.target
+SYSTEMD
+
+systemctl daemon-reload
+systemctl enable vigu-scheduler.timer
+systemctl restart vigu-scheduler.timer
+
+#############################
+# FIREWALL
+#############################
+ufw allow OpenSSH || true
+ufw allow 'Nginx Full' || true
+ufw --force enable || true
 
 echo "Deployment complete."
-If your build is done in CI and artifacts are uploaded, remove:
+echo "Open: https://${DOMAIN}"
+echo "Check queue: systemctl status vigu-queue"
+echo "Check scheduler: systemctl status vigu-scheduler.timer"
+After script finishes:
 
-npm ci
-npm run build
-Production .env Template (Safe Fields Only)
-Fill values with your real secrets on server only.
-
-env
-
-APP_NAME="Vigurungani School System"
-APP_ENV=production
-APP_KEY=
-APP_DEBUG=false
-APP_URL=https://app.yourdomain.com
-
-LOG_CHANNEL=stack
-LOG_LEVEL=warning
-
-DB_CONNECTION=mysql
-DB_HOST=your-managed-mysql-host
-DB_PORT=25060
-DB_DATABASE=vigurungani
-DB_USERNAME=your_db_user
-DB_PASSWORD=your_db_password
-
-BROADCAST_CONNECTION=log
-CACHE_STORE=redis
-FILESYSTEM_DISK=s3
-QUEUE_CONNECTION=redis
-SESSION_DRIVER=database
-SESSION_LIFETIME=120
-
-REDIS_CLIENT=phpredis
-REDIS_HOST=your-redis-host
-REDIS_PASSWORD=your-redis-password
-REDIS_PORT=25061
-
-# Mail
-MAIL_MAILER=smtp
-MAIL_HOST=smtp.postmarkapp.com
-MAIL_PORT=587
-MAIL_USERNAME=
-MAIL_PASSWORD=
-MAIL_ENCRYPTION=tls
-MAIL_FROM_ADDRESS="noreply@app.yourdomain.com"
-MAIL_FROM_NAME="${APP_NAME}"
-
-# S3 / Spaces / R2
-AWS_ACCESS_KEY_ID=
-AWS_SECRET_ACCESS_KEY=
-AWS_DEFAULT_REGION=us-east-1
-AWS_BUCKET=
-AWS_USE_PATH_STYLE_ENDPOINT=false
-AWS_ENDPOINT=
-AWS_URL=
-
-# Optional SMS provider (example placeholders)
-AFRICASTALKING_USERNAME=
-AFRICASTALKING_API_KEY=
-AFRICASTALKING_SENDER_ID=
-After setting .env, run once:
-
+Update SMTP values in .env (Resend/Brevo/etc.)
+Run:
 Bash
 
-php artisan config:cache
-php artisan route:cache
-php artisan view:cache
-Day-1 to Day-30 Maintenance Checklist
-
-Day 1 (Go-Live Day)
-
-Verify SSL active (https, padlock).
-Verify each role login works: principal, deputy_principal, secretary, accountant, store_keeper, hod.
-Test one parent message send and one result send.
-Confirm queue worker active in Forge.
-Confirm scheduler active in Forge.
-Confirm DB backup enabled and first backup completed.
-Daily (Days 2-30)
-
-Check failed jobs:
-Bash
-
-php artisan queue:failed
-Check app errors in logs (storage/logs/laravel.log).
-Confirm parent messages/results are being logged properly.
-Confirm yesterday backup exists.
-Verify disk usage on server is healthy.
-Weekly
-
-Apply OS security updates.
-Review user accounts and role assignments.
-Rotate any exposed/reset-required staff passwords.
-Test restore of backup into staging (at least once in first month).
-Check DB performance and slow queries.
-Twice in Month 1
-
-Review Cloudflare security events (WAF, bot blocks).
-Tune rate limits on login and messaging endpoints.
-Audit audit-logs/activity-logs for suspicious actions.
-Day 30 (Stabilization Review)
-
-Export incident list: auth issues, messaging failures, data issues.
-Review queue throughput and DB growth.
-Decide scale upgrades:
-Bigger droplet if CPU/RAM high.
-Add Redis if queue delays.
-Move more static media to CDN storage.
-Schedule month-2 patch window and backup restore drill.
-If you want, I can next give:
-
-Forge Queue Worker settings (exact command, tries, timeout, processes).
-Forge Scheduler setup command.
-A secure Cloudflare baseline rule set for Laravel login/API protection.
-Deployed the project
-
-
-
-Use these in Cloudflare WAF > Custom Rules and Rate Limiting Rules.
-
-Replace:
-
-app.yourdomain.com with your real host
-office IPs with your real static IPs
-Custom WAF Rules
-
-Admin area country allowlist (optional)
-txt
-
-(http.host eq "app.yourdomain.com" and starts_with(http.request.uri.path, "/admin") and not ip.geoip.country in {"KE" "UG" "TZ"})
-Action: Managed Challenge (or Block if strict)
-
-Protect admin with office IP allowlist only (optional strict mode)
-txt
-
-(http.host eq "app.yourdomain.com" and starts_with(http.request.uri.path, "/admin") and not ip.src in {102.68.10.10 41.90.20.20})
-Action: Managed Challenge
-
-Block suspicious methods to Laravel app
-txt
-
-(http.host eq "app.yourdomain.com" and not http.request.method in {"GET" "POST" "PUT" "PATCH" "DELETE" "HEAD" "OPTIONS"})
-Action: Block
-
-Challenge requests with common scanner user agents
-txt
-
-(http.host eq "app.yourdomain.com" and lower(http.user_agent) matches "(sqlmap|nikto|nmap|acunetix|masscan|zgrab|dirbuster|gobuster)")
-Action: Managed Challenge
-
-Challenge xmlrpc/probe paths not used by Laravel
-txt
-
-(http.host eq "app.yourdomain.com" and http.request.uri.path in {"/xmlrpc.php" "/wp-login.php" "/wp-admin" "/.env"})
-Action: Block
-
-Bypass cache for auth/admin/api (if using Cache Rules, not WAF)
-Use in Cache Rule expression:
-txt
-
-(http.host eq "app.yourdomain.com" and (starts_with(http.request.uri.path, "/admin") or starts_with(http.request.uri.path, "/login") or starts_with(http.request.uri.path, "/dashboard") or starts_with(http.request.uri.path, "/api")))
-Action: Bypass cache
-
-Rate Limiting Rules
-
-Login POST brute-force protection
-Expression:
-txt
-
-(http.host eq "app.yourdomain.com" and http.request.method eq "POST" and http.request.uri.path eq "/login")
-Threshold:
-
-10 requests
-
-Period 60 seconds
-
-By: IP
-Action: Managed Challenge
-Mitigation timeout: 10 minutes
-
-Forgot/reset password protection
-Expression:
-
-txt
-
-(http.host eq "app.yourdomain.com" and http.request.method eq "POST" and (http.request.uri.path eq "/forgot-password" or starts_with(http.request.uri.path, "/reset-password")))
-Threshold:
-
-5 requests
-
-Period 60 seconds
-
-By: IP
-Action: Managed Challenge
-Mitigation timeout: 10 minutes
-
-API abuse baseline
-Expression:
-
-txt
-
-(http.host eq "app.yourdomain.com" and starts_with(http.request.uri.path, "/api/"))
-Threshold:
-
-120 requests
-
-Period 60 seconds
-
-By: IP
-Action: Managed Challenge (or Block for stricter)
-Mitigation timeout: 5 minutes
-
-Parent notice send endpoint hardening
-Expression:
-
-txt
-
-(http.host eq "app.yourdomain.com" and http.request.method eq "POST" and http.request.uri.path eq "/admin/communications/notice")
-Threshold:
-
-30 requests
-
-Period 300 seconds
-
-By: IP
-Action: Managed Challenge
-Mitigation timeout: 15 minutes
-
-Parent result send endpoint hardening
-Expression:
-
-txt
-
-(http.host eq "app.yourdomain.com" and http.request.method eq "POST" and http.request.uri.path eq "/admin/communications/results")
-Threshold:
-
-30 requests
-Period 300 seconds
-By: IP
-Action: Managed Challenge
-Mitigation timeout: 15 minutes
-Optional bot score rule (if Bot Management available)
-
-Expression:
-
-txt
-
-(http.host eq "app.yourdomain.com" and starts_with(http.request.uri.path, "/admin") and cf.bot_management.score lt 30 and not cf.bot_management.verified_bot)
-Action: Managed Challenge
-
-If you want, I can also provide a recommended rule order (top to bottom) so they do not conflict.
-
-Deployed the project
-
-
-
-Allow trusted office IPs first
-Expression:
-txt
-
-(http.host eq "app.yourdomain.com" and ip.src in {102.68.10.10 41.90.20.20})
-Action: Allow
-
-Block obvious probe paths
-Expression:
-txt
-
-(http.host eq "app.yourdomain.com" and http.request.uri.path in {"/xmlrpc.php" "/wp-login.php" "/wp-admin" "/.env"})
-Action: Block
-
-Block invalid HTTP methods
-Expression:
-txt
-
-(http.host eq "app.yourdomain.com" and not http.request.method in {"GET" "POST" "PUT" "PATCH" "DELETE" "HEAD" "OPTIONS"})
-Action: Block
-
-Challenge scanner user agents
-Expression:
-txt
-
-(http.host eq "app.yourdomain.com" and lower(http.user_agent) matches "(sqlmap|nikto|nmap|acunetix|masscan|zgrab|dirbuster|gobuster)")
-Action: Managed Challenge
-
-Geo challenge for admin routes (optional)
-Expression:
-txt
-
-(http.host eq "app.yourdomain.com" and starts_with(http.request.uri.path, "/admin") and not ip.geoip.country in {"KE" "UG" "TZ"})
-Action: Managed Challenge
-
-Admin challenge for non-office IPs (optional strict)
-Expression:
-txt
-
-(http.host eq "app.yourdomain.com" and starts_with(http.request.uri.path, "/admin") and not ip.src in {102.68.10.10 41.90.20.20})
-Action: Managed Challenge
-
-Bot score challenge on admin (if Bot Management exists)
-Expression:
-txt
-
-(http.host eq "app.yourdomain.com" and starts_with(http.request.uri.path, "/admin") and cf.bot_management.score lt 30 and not cf.bot_management.verified_bot)
-Action: Managed Challenge
-
-Rate limit rule order
-
-Login POST
-txt
-
-(http.host eq "app.yourdomain.com" and http.request.method eq "POST" and http.request.uri.path eq "/login")
-Forgot/reset POST
-txt
-
-(http.host eq "app.yourdomain.com" and http.request.method eq "POST" and (http.request.uri.path eq "/forgot-password" or starts_with(http.request.uri.path, "/reset-password")))
-Parent notice POST
-txt
-
-(http.host eq "app.yourdomain.com" and http.request.method eq "POST" and http.request.uri.path eq "/admin/communications/notice")
-Parent results POST
-txt
-
-(http.host eq "app.yourdomain.com" and http.request.method eq "POST" and http.request.uri.path eq "/admin/communications/results")
-General API catch-all
-txt
-
-(http.host eq "app.yourdomain.com" and starts_with(http.request.uri.path, "/api/"))
-Cache rule order
-
-Bypass dynamic/admin/auth/API first
-txt
-
-(http.host eq "app.yourdomain.com" and (starts_with(http.request.uri.path, "/admin") or starts_with(http.request.uri.path, "/login") or starts_with(http.request.uri.path, "/dashboard") or starts_with(http.request.uri.path, "/api")))
-Cache static assets after that (*.css, *.js, images, fonts).
-
-
+cd /var/www/vigu
+sudo -u www-data php artisan config:cache
+sudo systemctl restart vigu-queue

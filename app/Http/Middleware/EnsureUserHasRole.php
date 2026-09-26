@@ -16,13 +16,27 @@ class EnsureUserHasRole
             abort(401, 'Unauthenticated.');
         }
 
-        $normalize = fn ($value) => str_replace([' ', '-'], '_', strtolower(trim((string) $value)));
+        $normalize = static fn ($value) => str_replace([' ', '-'], '_', strtolower(trim((string) $value)));
 
-        $normalizedRoles = array_map($normalize, $roles);
-        $role = $normalize($user->role);
+        $userRole = $normalize($user->role ?? '');
+        $allowedRoles = array_map($normalize, $roles);
 
-        if (! in_array($role, $normalizedRoles, true)) {
-            abort(403, 'You are not authorized for this action.');
+        // Super admin can access all protected routes.
+        if ($userRole === 'super_admin') {
+            return $next($request);
+        }
+
+        if (! in_array($userRole, $allowedRoles, true)) {
+            abort(403, 'You do not have the required role.');
+        }
+
+        // Enforce school scope for non-global users when school context is present.
+        if (app()->bound('currentSchool')) {
+            $currentSchool = app('currentSchool');
+
+            if ((int) $user->school_id !== (int) $currentSchool->id) {
+                abort(403, 'You are not allowed to access this school context.');
+            }
         }
 
         return $next($request);

@@ -11,23 +11,29 @@ class Exam extends Model
     use HasFactory;
 
     protected $fillable = [
+        'school_id',
         'title',
         'term',
         'year',
         'exam_date',
         'max_score',
         'status',
-        'assessment_system', // 844 | CBC | HYBRID
+        'assessment_system',
         'class_level',
+        'stream',
+        'subject',
         'pathway',
     ];
 
     protected $casts = [
         'year' => 'integer',
+        'max_score' => 'float',
         'exam_date' => 'date',
-        'max_score' => 'decimal:2',
     ];
 
+    /**
+     * All results recorded for this exam.
+     */
     public function results(): HasMany
     {
         return $this->hasMany(ExamResult::class);

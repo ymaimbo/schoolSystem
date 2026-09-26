@@ -13,25 +13,32 @@ class ExamResult extends Model
     protected $fillable = [
         'exam_id',
         'student_id',
+        'grading_system',
         'score',
         'grade',
         'points',
-        'grading_system', // 844 | CBC
-        'cbc_level',      // BE, AE, ME, EE
+        'cbc_level',
         'cbc_comment',
         'remarks',
+        'updated_by',
     ];
 
     protected $casts = [
-        'score' => 'decimal:2',
-        'points' => 'decimal:2',
+        'score' => 'float',
+        'points' => 'float',
     ];
 
+    /**
+     * Parent exam.
+     */
     public function exam(): BelongsTo
     {
         return $this->belongsTo(Exam::class);
     }
 
+    /**
+     * Student linked to this result row.
+     */
     public function student(): BelongsTo
     {
         return $this->belongsTo(Student::class);

@@ -1,245 +1,183 @@
 <script setup>
-import AdminLayout from '@/Layouts/AdminLayout.vue'
-import { Head, router, useForm } from '@inertiajs/vue3'
-import { computed, ref } from 'vue'
+import { Head, useForm } from '@inertiajs/vue3'
+import { ref } from 'vue'
 
 const props = defineProps({
-  records: { type: Object, default: () => ({ data: [] }) },
-  filters: { type: Object, default: () => ({ search: '', staff_type: '', role_category: '' }) },
-  staffTypes: { type: Array, default: () => [] },
-  roleCategories: { type: Array, default: () => [] },
-  statusOptions: { type: Array, default: () => [] },
-})
-
-const createForm = useForm({
-  full_name: '',
-  staff_type: 'teacher',
-  role_category: 'teacher',
-  department: '',
-  phone: '',
-  email: '',
-  employment_status: 'active',
-  is_on_duty: false,
-  duty_date: '',
-  notes: '',
+  records: {
+    type: Array,
+    default: () => [],
+  },
+  assignableRoles: {
+    type: Array,
+    default: () => [],
+  },
 })
 
 const editingId = ref(null)
-const editForm = useForm({
+
+const form = useForm({
   full_name: '',
-  staff_type: 'teacher',
-  role_category: 'teacher',
+  staff_type: '',
+  role_category: '',
   department: '',
   phone: '',
   email: '',
-  employment_status: 'active',
+  employment_status: '',
   is_on_duty: false,
   duty_date: '',
   notes: '',
+  assign_login: false,
+  login_email: '',
+  login_role: '',
+  login_password: '',
+  login_password_confirmation: '',
+  revoke_login: false,
 })
 
-const applyFilters = () => {
-  router.get(
-    route('admin.staff.index'),
-    {
-      search: props.filters.search,
-      staff_type: props.filters.staff_type,
-      role_category: props.filters.role_category,
-    },
-    { preserveState: true, replace: true }
-  )
+const resetForm = () => {
+  editingId.value = null
+  form.reset()
+  form.clearErrors()
 }
 
-const createRecord = () => {
-  createForm.post(route('admin.staff.store'), {
-    preserveScroll: true,
-    onSuccess: () =>
-      createForm.reset('full_name', 'department', 'phone', 'email', 'duty_date', 'notes'),
+const editRecord = (record) => {
+  editingId.value = record.id
+  form.full_name = record.full_name || ''
+  form.staff_type = record.staff_type || ''
+  form.role_category = record.role_category || ''
+  form.department = record.department || ''
+  form.phone = record.phone || ''
+  form.email = record.email || ''
+  form.employment_status = record.employment_status || ''
+  form.is_on_duty = !!record.is_on_duty
+  form.duty_date = record.duty_date || ''
+  form.notes = record.notes || ''
+  form.assign_login = !!record.has_login
+  form.login_email = record.login_email || ''
+  form.login_role = record.login_role || ''
+  form.login_password = ''
+  form.login_password_confirmation = ''
+  form.revoke_login = false
+  form.clearErrors()
+}
+
+const submit = () => {
+  if (editingId.value) {
+    form.put(route('admin.staff.update', editingId.value), {
+      onSuccess: () => resetForm(),
+    })
+    return
+  }
+
+  form.post(route('admin.staff.store'), {
+    onSuccess: () => resetForm(),
   })
 }
 
-const startEdit = (row) => {
-  editingId.value = row.id
-  editForm.full_name = row.full_name
-  editForm.staff_type = row.staff_type
-  editForm.role_category = row.role_category
-  editForm.department = row.department || ''
-  editForm.phone = row.phone || ''
-  editForm.email = row.email || ''
-  editForm.employment_status = row.employment_status
-  editForm.is_on_duty = !!row.is_on_duty
-  editForm.duty_date = row.duty_date || ''
-  editForm.notes = row.notes || ''
-}
-
-const updateRecord = () => {
-  if (!editingId.value) return
-  editForm.put(route('admin.staff.update', editingId.value), {
-    preserveScroll: true,
-    onSuccess: () => (editingId.value = null),
-  })
-}
-
-const deleteRecord = (id) => {
+const destroyRecord = (id) => {
   if (!confirm('Delete this staff record?')) return
-  useForm({}).delete(route('admin.staff.destroy', id), { preserveScroll: true })
+  form.delete(route('admin.staff.destroy', id))
 }
-
-const hodList = computed(() => props.records.data.filter((r) => r.role_category === 'hod'))
-const classTeacherList = computed(() => props.records.data.filter((r) => r.role_category === 'class_teacher'))
-const dutyList = computed(() => props.records.data.filter((r) => r.is_on_duty))
 </script>
 
 <template>
   <Head title="Staff Directory" />
-  <AdminLayout>
-    <div class="space-y-6">
-      <section>
-        <h1 class="text-2xl font-semibold text-slate-900">Staff Directory</h1>
-        <p class="text-sm text-slate-600">
-          Deputy Principal and Principal can manage teachers, workers, HOD list, class teachers, and duty roster.
-        </p>
-      </section>
 
-      <section class="grid gap-4 border border-slate-200 bg-white p-4 md:grid-cols-3">
-        <input
-          v-model="filters.search"
-          type="text"
-          placeholder="Search name / department / phone"
-          class="border border-slate-300 px-3 py-2 text-sm"
-          @input="applyFilters"
-        />
-        <select v-model="filters.staff_type" class="border border-slate-300 px-3 py-2 text-sm" @change="applyFilters">
-          <option value="">All staff types</option>
-          <option v-for="type in staffTypes" :key="type" :value="type">{{ type }}</option>
-        </select>
-        <select v-model="filters.role_category" class="border border-slate-300 px-3 py-2 text-sm" @change="applyFilters">
-          <option value="">All role categories</option>
-          <option v-for="type in roleCategories" :key="type" :value="type">{{ type }}</option>
-        </select>
-      </section>
+  <div class="min-h-screen bg-slate-950 px-6 py-10 text-slate-100">
+    <div class="mx-auto w-full max-w-6xl">
+      <h1 class="text-2xl font-semibold">Staff Directory And Role Access</h1>
+      <p class="mt-2 text-sm text-slate-300">
+        Principal can create staff profiles and assign login credentials with specific roles.
+      </p>
 
-      <section class="grid gap-6 lg:grid-cols-2">
-        <form class="space-y-3 border border-slate-200 bg-white p-5" @submit.prevent="createRecord">
-          <h2 class="text-lg font-semibold">Add Staff/Worker</h2>
-
-          <input v-model="createForm.full_name" type="text" placeholder="Full name" class="w-full border border-slate-300 px-3 py-2 text-sm" />
-          <select v-model="createForm.staff_type" class="w-full border border-slate-300 px-3 py-2 text-sm">
-            <option v-for="type in staffTypes" :key="type" :value="type">{{ type }}</option>
-          </select>
-          <select v-model="createForm.role_category" class="w-full border border-slate-300 px-3 py-2 text-sm">
-            <option v-for="type in roleCategories" :key="type" :value="type">{{ type }}</option>
-          </select>
-          <input v-model="createForm.department" type="text" placeholder="Department" class="w-full border border-slate-300 px-3 py-2 text-sm" />
-          <input v-model="createForm.phone" type="text" placeholder="Phone" class="w-full border border-slate-300 px-3 py-2 text-sm" />
-          <input v-model="createForm.email" type="email" placeholder="Email" class="w-full border border-slate-300 px-3 py-2 text-sm" />
-
-          <select v-model="createForm.employment_status" class="w-full border border-slate-300 px-3 py-2 text-sm">
-            <option v-for="status in statusOptions" :key="status" :value="status">{{ status }}</option>
-          </select>
-
-          <label class="flex items-center gap-2 text-sm">
-            <input v-model="createForm.is_on_duty" type="checkbox" />
-            On duty
+      <form class="mt-8 grid gap-4 border border-white/10 p-5" @submit.prevent="submit">
+        <div class="grid gap-4 sm:grid-cols-2">
+          <input v-model="form.full_name" type="text" placeholder="Full Name" class="border border-white/20 bg-slate-900 px-3 py-2" />
+          <input v-model="form.staff_type" type="text" placeholder="Staff Type" class="border border-white/20 bg-slate-900 px-3 py-2" />
+          <input v-model="form.department" type="text" placeholder="Department" class="border border-white/20 bg-slate-900 px-3 py-2" />
+          <input v-model="form.phone" type="text" placeholder="Phone" class="border border-white/20 bg-slate-900 px-3 py-2" />
+          <input v-model="form.email" type="email" placeholder="Contact Email (optional)" class="border border-white/20 bg-slate-900 px-3 py-2" />
+          <input v-model="form.employment_status" type="text" placeholder="Employment Status" class="border border-white/20 bg-slate-900 px-3 py-2" />
+          <input v-model="form.duty_date" type="date" class="border border-white/20 bg-slate-900 px-3 py-2" />
+          <label class="flex items-center gap-2 border border-white/20 bg-slate-900 px-3 py-2">
+            <input v-model="form.is_on_duty" type="checkbox" />
+            <span>Is On Duty</span>
           </label>
-
-          <input v-model="createForm.duty_date" type="date" class="w-full border border-slate-300 px-3 py-2 text-sm" />
-          <textarea v-model="createForm.notes" rows="2" placeholder="Notes" class="w-full border border-slate-300 px-3 py-2 text-sm" />
-
-          <button class="border border-slate-900 bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">
-            Save Record
-          </button>
-        </form>
-
-        <div class="space-y-4">
-          <div class="border border-slate-200 bg-white p-4">
-            <h3 class="font-semibold text-slate-900">Heads of Department</h3>
-            <ul class="mt-2 space-y-1 text-sm text-slate-700">
-              <li v-for="item in hodList" :key="`hod-${item.id}`">{{ item.full_name }} <span class="text-slate-500">({{ item.department || 'N/A' }})</span></li>
-              <li v-if="!hodList.length" class="text-slate-500">No HOD records yet.</li>
-            </ul>
-          </div>
-
-          <div class="border border-slate-200 bg-white p-4">
-            <h3 class="font-semibold text-slate-900">Class Teachers</h3>
-            <ul class="mt-2 space-y-1 text-sm text-slate-700">
-              <li v-for="item in classTeacherList" :key="`ct-${item.id}`">{{ item.full_name }} <span class="text-slate-500">({{ item.department || 'N/A' }})</span></li>
-              <li v-if="!classTeacherList.length" class="text-slate-500">No class teacher records yet.</li>
-            </ul>
-          </div>
-
-          <div class="border border-slate-200 bg-white p-4">
-            <h3 class="font-semibold text-slate-900">Teachers On Duty</h3>
-            <ul class="mt-2 space-y-1 text-sm text-slate-700">
-              <li v-for="item in dutyList" :key="`duty-${item.id}`">
-                {{ item.full_name }} <span class="text-slate-500">{{ item.duty_date || '' }}</span>
-              </li>
-              <li v-if="!dutyList.length" class="text-slate-500">No duty records yet.</li>
-            </ul>
-          </div>
         </div>
-      </section>
 
-      <section class="overflow-x-auto border border-slate-200 bg-white">
-        <table class="min-w-full text-sm">
-          <thead class="bg-slate-50 text-left text-slate-700">
-            <tr>
-              <th class="px-4 py-3">Name</th>
-              <th class="px-4 py-3">Type</th>
-              <th class="px-4 py-3">Category</th>
-              <th class="px-4 py-3">Department</th>
-              <th class="px-4 py-3">Duty</th>
-              <th class="px-4 py-3">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in records.data" :key="row.id" class="border-t border-slate-100">
-              <td class="px-4 py-3">{{ row.full_name }}</td>
-              <td class="px-4 py-3 capitalize">{{ row.staff_type }}</td>
-              <td class="px-4 py-3">{{ row.role_category }}</td>
-              <td class="px-4 py-3">{{ row.department || '-' }}</td>
-              <td class="px-4 py-3">{{ row.is_on_duty ? `Yes ${row.duty_date || ''}` : 'No' }}</td>
-              <td class="px-4 py-3">
-                <div class="flex gap-3">
-                  <button class="text-sky-700 hover:underline" @click="startEdit(row)">Edit</button>
-                  <button class="text-rose-600 hover:underline" @click="deleteRecord(row.id)">Delete</button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
+        <textarea v-model="form.notes" rows="3" placeholder="Notes" class="border border-white/20 bg-slate-900 px-3 py-2" />
 
-      <section v-if="editingId" class="space-y-3 border border-slate-200 bg-white p-5">
-        <h2 class="text-lg font-semibold">Edit Staff Record</h2>
-
-        <div class="grid gap-3 md:grid-cols-2">
-          <input v-model="editForm.full_name" type="text" placeholder="Full name" class="border border-slate-300 px-3 py-2 text-sm" />
-          <select v-model="editForm.staff_type" class="border border-slate-300 px-3 py-2 text-sm">
-            <option v-for="type in staffTypes" :key="type" :value="type">{{ type }}</option>
-          </select>
-          <select v-model="editForm.role_category" class="border border-slate-300 px-3 py-2 text-sm">
-            <option v-for="type in roleCategories" :key="type" :value="type">{{ type }}</option>
-          </select>
-          <input v-model="editForm.department" type="text" placeholder="Department" class="border border-slate-300 px-3 py-2 text-sm" />
-          <input v-model="editForm.phone" type="text" placeholder="Phone" class="border border-slate-300 px-3 py-2 text-sm" />
-          <input v-model="editForm.email" type="email" placeholder="Email" class="border border-slate-300 px-3 py-2 text-sm" />
-          <select v-model="editForm.employment_status" class="border border-slate-300 px-3 py-2 text-sm">
-            <option v-for="status in statusOptions" :key="status" :value="status">{{ status }}</option>
-          </select>
-          <label class="flex items-center gap-2 text-sm">
-            <input v-model="editForm.is_on_duty" type="checkbox" />
-            On duty
+        <div class="border-t border-white/10 pt-4">
+          <label class="flex items-center gap-2">
+            <input v-model="form.assign_login" type="checkbox" />
+            <span>Assign login access for this staff member</span>
           </label>
-          <input v-model="editForm.duty_date" type="date" class="border border-slate-300 px-3 py-2 text-sm" />
-          <textarea v-model="editForm.notes" rows="2" placeholder="Notes" class="border border-slate-300 px-3 py-2 text-sm md:col-span-2" />
+
+          <div v-if="form.assign_login" class="mt-3 grid gap-4 sm:grid-cols-2">
+            <input v-model="form.login_email" type="email" placeholder="Login Email" class="border border-white/20 bg-slate-900 px-3 py-2" />
+            <select v-model="form.login_role" class="border border-white/20 bg-slate-900 px-3 py-2">
+              <option value="">Select role</option>
+              <option v-for="role in assignableRoles" :key="role" :value="role">
+                {{ role }}
+              </option>
+            </select>
+            <input v-model="form.login_password" type="password" placeholder="Login Password" class="border border-white/20 bg-slate-900 px-3 py-2" />
+            <input v-model="form.login_password_confirmation" type="password" placeholder="Confirm Password" class="border border-white/20 bg-slate-900 px-3 py-2" />
+          </div>
+
+          <label v-if="editingId" class="mt-4 flex items-center gap-2">
+            <input v-model="form.revoke_login" type="checkbox" />
+            <span>Revoke login access for this staff member</span>
+          </label>
         </div>
 
         <div class="flex gap-3">
-          <button class="border border-slate-900 bg-slate-900 px-4 py-2 text-sm text-white" @click="updateRecord">Update</button>
-          <button class="border border-slate-300 px-4 py-2 text-sm" @click="editingId = null">Cancel</button>
+          <button type="submit" class="border border-emerald-300 bg-emerald-300 px-5 py-2 text-slate-950">
+            {{ editingId ? 'Update Staff' : 'Create Staff' }}
+          </button>
+          <button type="button" class="border border-white/20 px-5 py-2" @click="resetForm">
+            Reset
+          </button>
         </div>
-      </section>
+
+        <div v-if="Object.keys(form.errors).length" class="text-sm text-rose-300">
+          <p v-for="(message, key) in form.errors" :key="key">{{ message }}</p>
+        </div>
+      </form>
+
+      <div class="mt-8 overflow-x-auto border border-white/10">
+        <table class="min-w-full text-left text-sm">
+          <thead class="border-b border-white/10">
+            <tr>
+              <th class="px-3 py-2">Name</th>
+              <th class="px-3 py-2">Department</th>
+              <th class="px-3 py-2">Role</th>
+              <th class="px-3 py-2">Login</th>
+              <th class="px-3 py-2">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="record in records" :key="record.id" class="border-b border-white/5">
+              <td class="px-3 py-2">{{ record.full_name }}</td>
+              <td class="px-3 py-2">{{ record.department || '-' }}</td>
+              <td class="px-3 py-2">{{ record.login_role || record.role_category || '-' }}</td>
+              <td class="px-3 py-2">
+                <span v-if="record.has_login">{{ record.login_email }}</span>
+                <span v-else>No login</span>
+              </td>
+              <td class="px-3 py-2">
+                <div class="flex gap-2">
+                  <button class="border border-white/20 px-2 py-1" @click="editRecord(record)">Edit</button>
+                  <button class="border border-rose-400/60 px-2 py-1 text-rose-300" @click="destroyRecord(record.id)">Delete</button>
+                </div>
+              </td>
+            </tr>
+            <tr v-if="!records.length">
+              <td colspan="5" class="px-3 py-6 text-center text-slate-400">No staff records yet.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
-  </AdminLayout>
+  </div>
 </template>

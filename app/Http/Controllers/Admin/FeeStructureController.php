@@ -17,7 +17,10 @@ class FeeStructureController extends Controller
 {
     public function index(): Response
     {
+        $schoolId = $this->currentSchoolId();
+
         $structures = FeeStructure::query()
+            ->where('school_id', $schoolId)
             ->withCount('feeAccounts')
             ->withSum('lines as govt_total', 'govt_capitation_amount')
             ->withSum('lines as parent_total', 'parent_total_amount')
@@ -28,6 +31,7 @@ class FeeStructureController extends Controller
             ->withQueryString();
 
         $voteHeads = VoteHead::query()
+            ->where('school_id', $schoolId)
             ->where('is_active', true)
             ->orderBy('code')
             ->get(['id', 'code', 'name']);
@@ -41,6 +45,8 @@ class FeeStructureController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
+        $schoolId = $this->currentSchoolId();
+
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'year' => ['required', 'integer', 'min:2020', 'max:2100'],
@@ -48,7 +54,7 @@ class FeeStructureController extends Controller
             'class_level' => ['nullable', 'string', 'max:100'],
             'notes' => ['nullable', 'string'],
             'lines' => ['required', 'array', 'min:1'],
-            'lines.*.vote_head_id' => ['required', 'exists:vote_heads,id'],
+            'lines.*.vote_head_id' => ['required', 'integer'],
             'lines.*.govt_capitation_amount' => ['nullable', 'numeric', 'min:0'],
             'lines.*.parent_total_amount' => ['nullable', 'numeric', 'min:0'],
             'lines.*.term1_amount' => ['nullable', 'numeric', 'min:0'],
@@ -57,8 +63,17 @@ class FeeStructureController extends Controller
             'lines.*.sort_order' => ['nullable', 'integer', 'min:0'],
         ]);
 
-        DB::transaction(function () use ($data) {
+        $allowedVoteHeadIds = VoteHead::query()
+            ->where('school_id', $schoolId)
+            ->whereIn('id', collect($data['lines'])->pluck('vote_head_id')->all())
+            ->pluck('id')
+            ->all();
+
+        $allowedLookup = array_fill_keys($allowedVoteHeadIds, true);
+
+        DB::transaction(function () use ($data, $schoolId, $allowedLookup): void {
             $structure = FeeStructure::create([
+                'school_id' => $schoolId,
                 'name' => $data['name'],
                 'year' => $data['year'],
                 'category' => $data['category'],
@@ -69,15 +84,29 @@ class FeeStructureController extends Controller
             ]);
 
             foreach ($data['lines'] as $i => $line) {
+                $voteHeadId = (int) $line['vote_head_id'];
+
+                if (! isset($allowedLookup[$voteHeadId])) {
+                    continue;
+                }
+
                 $govt = (float) ($line['govt_capitation_amount'] ?? 0);
                 $parent = (float) ($line['parent_total_amount'] ?? 0);
                 $t1 = (float) ($line['term1_amount'] ?? 0);
                 $t2 = (float) ($line['term2_amount'] ?? 0);
                 $t3 = (float) ($line['term3_amount'] ?? 0);
 
+                $distributed = $t1 + $t2 + $t3;
+                if ($parent > 0 && $distributed <= 0) {
+                    $t1 = round($parent / 3, 2);
+                    $t2 = round($parent / 3, 2);
+                    $t3 = round($parent - $t1 - $t2, 2);
+                }
+
                 FeeStructureLine::create([
+                    'school_id' => $schoolId,
                     'fee_structure_id' => $structure->id,
-                    'vote_head_id' => (int) $line['vote_head_id'],
+                    'vote_head_id' => $voteHeadId,
                     'govt_capitation_amount' => $govt,
                     'parent_total_amount' => $parent,
                     'term1_amount' => $t1,
@@ -94,9 +123,13 @@ class FeeStructureController extends Controller
 
     public function edit(FeeStructure $feeStructure): Response
     {
+        $schoolId = $this->currentSchoolId();
+        abort_if((int) $feeStructure->school_id !== $schoolId, 404);
+
         $feeStructure->load(['lines.voteHead']);
 
         $voteHeads = VoteHead::query()
+            ->where('school_id', $schoolId)
             ->where('is_active', true)
             ->orderBy('code')
             ->get(['id', 'code', 'name']);
@@ -120,7 +153,7 @@ class FeeStructureController extends Controller
                     'term2_amount' => (float) $l->term2_amount,
                     'term3_amount' => (float) $l->term3_amount,
                     'total_amount' => (float) $l->total_amount,
-                    'sort_order' => $l->sort_order,
+                    'sort_order' => (int) $l->sort_order,
                 ])->values(),
             ],
             'voteHeads' => $voteHeads,
@@ -130,6 +163,9 @@ class FeeStructureController extends Controller
 
     public function update(Request $request, FeeStructure $feeStructure): RedirectResponse
     {
+        $schoolId = $this->currentSchoolId();
+        abort_if((int) $feeStructure->school_id !== $schoolId, 404);
+
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'year' => ['required', 'integer', 'min:2020', 'max:2100'],
@@ -137,7 +173,7 @@ class FeeStructureController extends Controller
             'class_level' => ['nullable', 'string', 'max:100'],
             'notes' => ['nullable', 'string'],
             'lines' => ['required', 'array', 'min:1'],
-            'lines.*.vote_head_id' => ['required', 'exists:vote_heads,id'],
+            'lines.*.vote_head_id' => ['required', 'integer'],
             'lines.*.govt_capitation_amount' => ['nullable', 'numeric', 'min:0'],
             'lines.*.parent_total_amount' => ['nullable', 'numeric', 'min:0'],
             'lines.*.term1_amount' => ['nullable', 'numeric', 'min:0'],
@@ -146,7 +182,15 @@ class FeeStructureController extends Controller
             'lines.*.sort_order' => ['nullable', 'integer', 'min:0'],
         ]);
 
-        DB::transaction(function () use ($data, $feeStructure) {
+        $allowedVoteHeadIds = VoteHead::query()
+            ->where('school_id', $schoolId)
+            ->whereIn('id', collect($data['lines'])->pluck('vote_head_id')->all())
+            ->pluck('id')
+            ->all();
+
+        $allowedLookup = array_fill_keys($allowedVoteHeadIds, true);
+
+        DB::transaction(function () use ($data, $feeStructure, $schoolId, $allowedLookup): void {
             $feeStructure->update([
                 'name' => $data['name'],
                 'year' => $data['year'],
@@ -155,18 +199,31 @@ class FeeStructureController extends Controller
                 'notes' => $data['notes'] ?? null,
             ]);
 
-            $feeStructure->lines()->delete();
+            $feeStructure->lines()->where('school_id', $schoolId)->delete();
 
             foreach ($data['lines'] as $i => $line) {
+                $voteHeadId = (int) $line['vote_head_id'];
+                if (! isset($allowedLookup[$voteHeadId])) {
+                    continue;
+                }
+
                 $govt = (float) ($line['govt_capitation_amount'] ?? 0);
                 $parent = (float) ($line['parent_total_amount'] ?? 0);
                 $t1 = (float) ($line['term1_amount'] ?? 0);
                 $t2 = (float) ($line['term2_amount'] ?? 0);
                 $t3 = (float) ($line['term3_amount'] ?? 0);
 
+                $distributed = $t1 + $t2 + $t3;
+                if ($parent > 0 && $distributed <= 0) {
+                    $t1 = round($parent / 3, 2);
+                    $t2 = round($parent / 3, 2);
+                    $t3 = round($parent - $t1 - $t2, 2);
+                }
+
                 FeeStructureLine::create([
+                    'school_id' => $schoolId,
                     'fee_structure_id' => $feeStructure->id,
-                    'vote_head_id' => (int) $line['vote_head_id'],
+                    'vote_head_id' => $voteHeadId,
                     'govt_capitation_amount' => $govt,
                     'parent_total_amount' => $parent,
                     'term1_amount' => $t1,
@@ -185,7 +242,11 @@ class FeeStructureController extends Controller
 
     public function destroy(FeeStructure $feeStructure): RedirectResponse
     {
+        $schoolId = $this->currentSchoolId();
+        abort_if((int) $feeStructure->school_id !== $schoolId, 404);
+
         $inUse = StudentFeeAccount::query()
+            ->where('school_id', $schoolId)
             ->where('fee_structure_id', $feeStructure->id)
             ->exists();
 
@@ -196,5 +257,16 @@ class FeeStructureController extends Controller
         $feeStructure->delete();
 
         return back()->with('success', 'Fee structure deleted.');
+    }
+
+    private function currentSchoolId(): int
+    {
+        $school = app('currentSchool');
+
+        if (! $school || empty($school->id)) {
+            abort(403, 'No school context found.');
+        }
+
+        return (int) $school->id;
     }
 }

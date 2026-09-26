@@ -1,396 +1,476 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Student Fee Receipt - {{ $payment->receipt_no ?? 'N/A' }}</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Payment Receipt</title>
     <style>
+        :root {
+            --ink: #0f172a;
+            --muted: #64748b;
+            --line: #e2e8f0;
+            --soft: #f8fafc;
+            --accent: #0ea5e9;
+            --ok: #16a34a;
+            --warn: #f59e0b;
+        }
+
         * { box-sizing: border-box; }
 
         body {
-            font-family: Arial, Helvetica, sans-serif;
-            margin: 24px;
-            color: #111827;
-            font-size: 12px;
-        }
-
-        .container {
-            max-width: 980px;
-            margin: 0 auto;
-        }
-
-        .header {
-            display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
-            gap: 16px;
-            border-bottom: 2px solid #111;
-            padding-bottom: 12px;
-            margin-bottom: 14px;
-        }
-
-        .school-meta h2 {
-            margin: 0 0 4px 0;
-            font-size: 20px;
-            letter-spacing: .3px;
-        }
-
-        .school-meta p {
-            margin: 2px 0;
-            color: #374151;
-        }
-
-        .logo {
-            width: 86px;
-            height: 86px;
-            object-fit: contain;
-            border: 1px solid #ddd;
-            padding: 4px;
+            margin: 0;
+            padding: 24px;
+            font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif;
+            color: var(--ink);
             background: #fff;
         }
 
-        .doc-title {
-            margin: 0 0 14px 0;
-            font-size: 18px;
-            font-weight: 700;
+        .sheet {
+            max-width: 860px;
+            margin: 0 auto;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .topbar {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--line);
+            background: #fff;
+        }
+
+        .brand {
+            display: flex;
+            gap: 14px;
+            align-items: center;
+        }
+
+        .logo {
+            width: 52px;
+            height: 52px;
+            border-radius: 10px;
+            background: var(--soft);
+            border: 1px solid var(--line);
+            object-fit: contain;
+            display: block;
+        }
+
+        .school h1 {
+            margin: 0;
+            font-size: 20px;
+            line-height: 1.2;
+        }
+
+        .school p {
+            margin: 4px 0 0;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .receipt-meta {
+            text-align: right;
+            min-width: 240px;
+        }
+
+        .receipt-title {
+            margin: 0;
+            font-size: 13px;
+            color: var(--muted);
             text-transform: uppercase;
-            text-align: center;
-            letter-spacing: .4px;
+            letter-spacing: .08em;
+        }
+
+        .receipt-no {
+            margin: 6px 0 10px;
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--ink);
+        }
+
+        .pill {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 600;
+            background: #ecfeff;
+            color: #0369a1;
+            border: 1px solid #bae6fd;
+        }
+
+        .content {
+            padding: 22px 24px;
         }
 
         .grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            margin-bottom: 14px;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
+            margin-bottom: 16px;
         }
 
         .card {
-            border: 1px solid #333;
-            padding: 10px;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 14px;
+            background: #fff;
         }
 
-        .card h4 {
-            margin: 0 0 8px 0;
-            font-size: 13px;
+        .card h3 {
+            margin: 0 0 10px;
+            font-size: 12px;
             text-transform: uppercase;
-            letter-spacing: .3px;
+            letter-spacing: .08em;
+            color: var(--muted);
         }
 
-        .row {
-            display: flex;
-            justify-content: space-between;
-            gap: 10px;
-            border-bottom: 1px dashed #ddd;
-            padding: 4px 0;
+        .rows {
+            display: grid;
+            grid-template-columns: 130px 1fr;
+            row-gap: 8px;
+            column-gap: 8px;
+            font-size: 14px;
         }
 
-        .row:last-child { border-bottom: 0; }
-
-        .label { color: #4b5563; }
-
-        .value {
-            font-weight: 600;
-            text-align: right;
-        }
+        .label { color: var(--muted); }
+        .value { font-weight: 600; color: var(--ink); }
 
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 8px;
-            font-size: 12px;
+            margin-top: 10px;
+            font-size: 14px;
         }
 
         th, td {
-            border: 1px solid #333;
-            padding: 6px 8px;
+            border: 1px solid var(--line);
+            padding: 10px;
+            text-align: left;
             vertical-align: top;
         }
 
         th {
-            background: #f3f4f6;
-            text-align: left;
-            font-weight: 700;
+            background: var(--soft);
+            color: #334155;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: .06em;
         }
 
-        .text-right { text-align: right; }
-        .text-center { text-align: center; }
-        .mt-16 { margin-top: 16px; }
-        .mt-20 { margin-top: 20px; }
-        .mt-24 { margin-top: 24px; }
+        .money { text-align: right; font-variant-numeric: tabular-nums; }
 
-        .note {
-            margin-top: 10px;
-            color: #4b5563;
-            font-size: 11px;
+        .summary {
+            margin-top: 14px;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .summary .head {
+            background: var(--soft);
+            padding: 10px 12px;
+            font-size: 12px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: .06em;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .summary .body {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .summary .item {
+            padding: 14px 12px;
+            border-right: 1px solid var(--line);
+        }
+
+        .summary .item:last-child { border-right: none; }
+
+        .summary .k {
+            margin: 0;
+            color: var(--muted);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: .05em;
+        }
+
+        .summary .v {
+            margin: 6px 0 0;
+            font-size: 20px;
+            font-weight: 800;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .summary .v.ok { color: var(--ok); }
+        .summary .v.warn { color: var(--warn); }
+
+        .notes {
+            margin-top: 16px;
+            border: 1px dashed #cbd5e1;
+            border-radius: 10px;
+            padding: 12px;
+            background: #fcfdff;
+        }
+
+        .notes h4 {
+            margin: 0 0 6px;
+            font-size: 12px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: .06em;
+        }
+
+        .notes p {
+            margin: 0;
+            color: #334155;
+            line-height: 1.5;
         }
 
         .signatures {
+            margin-top: 24px;
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 24px;
-            margin-top: 32px;
         }
 
-        .sign-box {
+        .sig {
+            border-top: 1px solid #94a3b8;
+            padding-top: 8px;
+            text-align: center;
+            color: #475569;
+            font-size: 13px;
+        }
+
+        .footer {
+            padding: 14px 24px 20px;
+            color: #64748b;
+            font-size: 12px;
+            border-top: 1px solid var(--line);
             text-align: center;
         }
 
-        .sign-line {
-            border-top: 1px solid #111;
-            margin-top: 30px;
-            padding-top: 6px;
-            font-size: 12px;
-            font-weight: 600;
-        }
-
         .print-actions {
-            margin-top: 18px;
+            max-width: 860px;
+            margin: 12px auto 0;
             display: flex;
+            justify-content: flex-end;
             gap: 10px;
-            justify-content: center;
         }
 
         .btn {
-            border: 1px solid #111;
-            background: #111;
-            color: #fff;
-            padding: 8px 12px;
-            font-size: 12px;
+            border: 1px solid #cbd5e1;
+            background: #fff;
+            color: #0f172a;
+            border-radius: 8px;
+            padding: 9px 14px;
+            font-weight: 600;
             cursor: pointer;
         }
 
-        .btn.secondary {
-            background: #fff;
-            color: #111;
+        .btn.primary {
+            border-color: #38bdf8;
+            background: #e0f2fe;
+            color: #0c4a6e;
         }
 
         @media print {
-            body { margin: 0; }
+            body { padding: 0; }
             .print-actions { display: none !important; }
-            .container { max-width: 100%; }
-            a { text-decoration: none; color: inherit; }
+            .sheet { border: none; border-radius: 0; }
+        }
+
+        @media (max-width: 760px) {
+            .topbar { flex-direction: column; }
+            .receipt-meta { text-align: left; }
+            .grid { grid-template-columns: 1fr; }
+            .summary .body { grid-template-columns: 1fr; }
+            .summary .item { border-right: none; border-bottom: 1px solid var(--line); }
+            .summary .item:last-child { border-bottom: none; }
+            .signatures { grid-template-columns: 1fr; }
         }
     </style>
 </head>
 <body>
-<div class="container">
+@php
+    $studentName = trim(($student->first_name ?? '') . ' ' . ($student->last_name ?? ''));
+    $admissionNo = $student->admission_no ?? 'N/A';
 
-    @php
-        $allocations = $allocations ?? collect();
+    $paidAmount = (float) ($payment->amount ?? 0);
 
-        // Grouped totals by vote head for cleaner accountant summary
-        $allocationByVoteHead = $allocations->groupBy(function ($a) {
-            return ($a->vote_code ?? 'N/A') . '||' . ($a->vote_name ?? 'Unknown');
-        })->map(function ($group, $key) {
-            [$code, $name] = explode('||', $key);
-            return (object) [
-                'vote_code' => $code,
-                'vote_name' => $name,
-                'parent_total' => (float) $group->where('source', 'parent')->sum('allocated_amount'),
-                'capitation_total' => (float) $group->where('source', 'capitation')->sum('allocated_amount'),
-                'total' => (float) $group->sum('allocated_amount'),
-            ];
-        })->sortBy('vote_code')->values();
+    // Current balance after this payment
+    $currentBalance = (float) (
+        optional($payment->account)->total_fee_due
+        ?? optional(optional($payment->student)->feeAccount)->total_fee_due
+        ?? 0
+    );
 
-        $grandParentAllocated = (float) $allocations->where('source', 'parent')->sum('allocated_amount');
-        $grandCapitationAllocated = (float) $allocations->where('source', 'capitation')->sum('allocated_amount');
-        $grandAllocated = (float) $allocations->sum('allocated_amount');
-    @endphp
+    // Estimated previous balance before this payment
+    $previousBalance = $currentBalance + $paidAmount;
 
-    <div class="header">
-        <div class="school-meta">
-            <h2>{{ $school['name'] ?? config('app.name') }}</h2>
+    // Estimated total billed
+    $estimatedBilled = $previousBalance + (float) (optional($payment->account)->total_paid ?? 0);
 
-            @if(!empty($school['code']))
-                <p><strong>School Code:</strong> {{ $school['code'] }}</p>
+    $receiptNo = $payment->receipt_no ?? $payment->reference_no ?? 'N/A';
+    $paymentMethod = strtoupper((string) ($payment->payment_method ?? 'N/A'));
+    $orgName = $payment->organization_name ?? 'N/A';
+    $orgId = $payment->organization_id ?? 'N/A';
+
+    $rawDate = $payment->paid_at ?? $payment->created_at;
+    $paymentDate = $rawDate ? \Illuminate\Support\Carbon::parse($rawDate)->format('d M Y') : 'N/A';
+
+    $schoolName = config('app.name', 'School');
+@endphp
+
+<div class="sheet">
+    <header class="topbar">
+        <div class="brand">
+            @if(file_exists(public_path('images/school-logo.png')))
+                <img src="{{ asset('images/school-logo.png') }}" alt="School logo" class="logo">
+            @else
+                <div class="logo"></div>
             @endif
 
-            @if(!empty($school['location']))
-                <p><strong>Location:</strong> {{ $school['location'] }}</p>
-            @endif
-
-            <p><strong>Date Printed:</strong> {{ now()->format('Y-m-d H:i') }}</p>
+            <div class="school">
+                <h1>{{ $schoolName }}</h1>
+                <p>Official Student Fee Payment Receipt</p>
+            </div>
         </div>
 
-        @if(!empty($school['logo']))
-            <img src="{{ asset($school['logo']) }}" alt="School Logo" class="logo">
+        <div class="receipt-meta">
+            <p class="receipt-title">Receipt Number</p>
+            <p class="receipt-no">{{ $receiptNo }}</p>
+            <span class="pill">{{ $paymentMethod }}</span>
+        </div>
+    </header>
+
+    <main class="content">
+        <section class="grid">
+            <article class="card">
+                <h3>Student Details</h3>
+                <div class="rows">
+                    <div class="label">Name</div>
+                    <div class="value">{{ $studentName ?: 'N/A' }}</div>
+
+                    <div class="label">Admission No</div>
+                    <div class="value">{{ $admissionNo }}</div>
+
+                    <div class="label">Class</div>
+                    <div class="value">
+                        {{ $student->class_level ?? 'N/A' }}
+                        @if(!empty($student->stream))
+                            - {{ $student->stream }}
+                        @endif
+                    </div>
+                </div>
+            </article>
+
+            <article class="card">
+                <h3>Payment Details</h3>
+                <div class="rows">
+                    <div class="label">Date</div>
+                    <div class="value">{{ $paymentDate }}</div>
+
+                    <div class="label">Method</div>
+                    <div class="value">{{ $paymentMethod }}</div>
+
+                    <div class="label">Organization</div>
+                    <div class="value">{{ $orgName }}</div>
+
+                    <div class="label">Org/Reference</div>
+                    <div class="value">{{ $orgId }}</div>
+
+                    <div class="label">Recorded By</div>
+                    <div class="value">{{ optional($payment->recorder)->name ?? 'System' }}</div>
+                </div>
+            </article>
+        </section>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Description</th>
+                    <th class="money">Amount (KES)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Fee Payment Received</td>
+                    <td class="money">{{ number_format($paidAmount, 2) }}</td>
+                </tr>
+            </tbody>
+        </table>
+
+        {{-- Student Balance Block (added) --}}
+        <section class="summary">
+            <div class="head">Student Balance Summary</div>
+            <div class="body">
+                <div class="item">
+                    <p class="k">Balance Before Payment</p>
+                    <p class="v">{{ number_format($previousBalance, 2) }}</p>
+                </div>
+                <div class="item">
+                    <p class="k">Payment Amount</p>
+                    <p class="v ok">{{ number_format($paidAmount, 2) }}</p>
+                </div>
+                <div class="item">
+                    <p class="k">Current Balance</p>
+                    <p class="v warn">{{ number_format($currentBalance, 2) }}</p>
+                </div>
+            </div>
+        </section>
+
+        @if(isset($allocations) && is_iterable($allocations) && count($allocations) > 0)
+            <div style="margin-top: 18px;">
+                <h3 style="margin:0 0 8px; font-size:13px; color:#475569; text-transform:uppercase; letter-spacing:.06em;">
+                    Allocation Breakdown
+                </h3>
+                <table>
+                    <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Category</th>
+                        <th class="money">Allocated (KES)</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach($allocations as $i => $allocation)
+                        <tr>
+                            <td>{{ $i + 1 }}</td>
+                            <td>{{ $allocation['category'] ?? $allocation->category ?? 'General' }}</td>
+                            <td class="money">
+                                {{ number_format((float) ($allocation['amount'] ?? $allocation->amount ?? 0), 2) }}
+                            </td>
+                        </tr>
+                    @endforeach
+                    </tbody>
+                </table>
+            </div>
         @endif
-    </div>
 
-    <h3 class="doc-title">Official Student Fee Receipt</h3>
-
-    <div class="grid">
-        <div class="card">
-            <h4>Receipt Details</h4>
-            <div class="row">
-                <span class="label">Receipt No</span>
-                <span class="value">{{ $payment->receipt_no ?? '-' }}</span>
-            </div>
-            <div class="row">
-                <span class="label">Payment Date</span>
-                <span class="value">{{ optional($payment->paid_at)->format('Y-m-d') ?? $payment->paid_at ?? '-' }}</span>
-            </div>
-            <div class="row">
-                <span class="label">Payment Method</span>
-                <span class="value">{{ ucfirst($payment->payment_method ?? '-') }}</span>
-            </div>
-            <div class="row">
-                <span class="label">Recorded By</span>
-                <span class="value">{{ optional($payment->recorder)->name ?? 'System' }}</span>
-            </div>
-            <div class="row">
-                <span class="label">Organization</span>
-                <span class="value">
-                    {{ $payment->organization_name ?: '-' }}
-                    @if(!empty($payment->organization_id))
-                        ({{ $payment->organization_id }})
-                    @endif
-                </span>
-            </div>
+        <div class="notes">
+            <h4>Notes</h4>
+            <p>{{ $payment->notes ?: 'No additional notes provided.' }}</p>
         </div>
 
-        <div class="card">
-            <h4>Student Details</h4>
-            <div class="row">
-                <span class="label">Admission No</span>
-                <span class="value">{{ $payment->student->admission_no ?? '-' }}</span>
-            </div>
-            <div class="row">
-                <span class="label">Student Name</span>
-                <span class="value">
-                    {{ trim(($payment->student->first_name ?? '') . ' ' . ($payment->student->last_name ?? '')) ?: '-' }}
-                </span>
-            </div>
-            <div class="row">
-                <span class="label">Class / Stream</span>
-                <span class="value">
-                    {{ $payment->student->class_level ?? '-' }}
-                    @if(!empty($payment->student->stream))
-                        / {{ $payment->student->stream }}
-                    @endif
-                </span>
-            </div>
-            <div class="row">
-                <span class="label">Amount Paid (This Receipt)</span>
-                <span class="value">{{ number_format((float) ($payment->amount ?? 0), 2) }}</span>
-            </div>
+        <div class="signatures">
+            <div class="sig">School Stamp / Authorized Signature</div>
+            <div class="sig">Parent / Student Signature</div>
         </div>
-    </div>
+    </main>
 
-    <table>
-        <thead>
-        <tr>
-            <th style="width: 45%;">Description</th>
-            <th class="text-right" style="width: 18%;">Due</th>
-            <th class="text-right" style="width: 18%;">Paid Total</th>
-            <th class="text-right" style="width: 19%;">Balance</th>
-        </tr>
-        </thead>
-        <tbody>
-        <tr>
-            <td>Student Fee Account Summary</td>
-            <td class="text-right">{{ number_format((float) ($due ?? 0), 2) }}</td>
-            <td class="text-right">{{ number_format((float) ($paidTotal ?? 0), 2) }}</td>
-            <td class="text-right">{{ number_format((float) ($balance ?? 0), 2) }}</td>
-        </tr>
-        </tbody>
-    </table>
+    <footer class="footer">
+        Generated on {{ now()->format('d M Y, h:i A') }} • Keep this receipt for reference.
+    </footer>
+</div>
 
-    {{-- Detailed allocation lines (audit trail) --}}
-    @if($allocations->count())
-        <div class="mt-20">
-            <h4 style="margin: 0 0 8px 0; font-size: 14px; font-weight: 700;">
-                Allocated By Vote Head (Detailed Lines)
-            </h4>
-
-            <table>
-                <thead>
-                <tr>
-                    <th style="width: 6%;">#</th>
-                    <th style="width: 34%;">Vote Head</th>
-                    <th style="width: 14%;">Source</th>
-                    <th style="width: 12%;">Term</th>
-                    <th style="width: 14%;">Order</th>
-                    <th class="text-right" style="width: 20%;">Allocated Amount</th>
-                </tr>
-                </thead>
-                <tbody>
-                @foreach($allocations as $i => $a)
-                    <tr>
-                        <td>{{ $i + 1 }}</td>
-                        <td>{{ $a->vote_code }} - {{ $a->vote_name }}</td>
-                        <td>{{ ucfirst($a->source) }}</td>
-                        <td>{{ $a->term }}</td>
-                        <td>{{ $a->allocation_order }}</td>
-                        <td class="text-right">{{ number_format((float) $a->allocated_amount, 2) }}</td>
-                    </tr>
-                @endforeach
-                </tbody>
-            </table>
-        </div>
-
-        {{-- Grouped summary by vote head (clean accountant summary) --}}
-        <div class="mt-20">
-            <h4 style="margin: 0 0 8px 0; font-size: 14px; font-weight: 700;">
-                Allocation Summary By Vote Head
-            </h4>
-
-            <table>
-                <thead>
-                <tr>
-                    <th style="width: 40%;">Vote Head</th>
-                    <th class="text-right" style="width: 20%;">Parent Allocated</th>
-                    <th class="text-right" style="width: 20%;">Capitation Allocated</th>
-                    <th class="text-right" style="width: 20%;">Total Allocated</th>
-                </tr>
-                </thead>
-                <tbody>
-                @foreach($allocationByVoteHead as $g)
-                    <tr>
-                        <td>{{ $g->vote_code }} - {{ $g->vote_name }}</td>
-                        <td class="text-right">{{ number_format($g->parent_total, 2) }}</td>
-                        <td class="text-right">{{ number_format($g->capitation_total, 2) }}</td>
-                        <td class="text-right">{{ number_format($g->total, 2) }}</td>
-                    </tr>
-                @endforeach
-                </tbody>
-                <tfoot>
-                <tr>
-                    <th class="text-right">GRAND TOTAL</th>
-                    <th class="text-right">{{ number_format($grandParentAllocated, 2) }}</th>
-                    <th class="text-right">{{ number_format($grandCapitationAllocated, 2) }}</th>
-                    <th class="text-right">{{ number_format($grandAllocated, 2) }}</th>
-                </tr>
-                </tfoot>
-            </table>
-        </div>
-    @else
-        <p class="note">No vote-head allocation entries recorded for this receipt.</p>
-    @endif
-
-    @if(!empty($payment->notes))
-        <div class="mt-16">
-            <strong>Notes:</strong>
-            <p style="margin-top: 4px;">{{ $payment->notes }}</p>
-        </div>
-    @endif
-
-    <div class="signatures">
-        <div class="sign-box">
-            <div class="sign-line">Accountant Signature</div>
-        </div>
-        <div class="sign-box">
-            <div class="sign-line">Principal Signature</div>
-        </div>
-        <div class="sign-box">
-            <div class="sign-line">Parent/Payee Signature</div>
-        </div>
-    </div>
-
-    <div class="print-actions">
-        <button class="btn" onclick="window.print()">Print Receipt</button>
-        <button class="btn secondary" onclick="window.close()">Close</button>
-    </div>
+<div class="print-actions">
+    <button class="btn" onclick="window.history.back()">Back</button>
+    <button class="btn primary" onclick="window.print()">Print</button>
 </div>
 </body>
 </html>

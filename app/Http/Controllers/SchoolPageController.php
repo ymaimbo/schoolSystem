@@ -3,45 +3,25 @@
 namespace App\Http\Controllers;
 
 use App\Models\School;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class SchoolPageController extends Controller
 {
-    public function __invoke(): Response
+    public function __invoke(School $school): Response
     {
-        $school = School::query()
-            ->with([
-                'programs' => fn ($query) => $query
-                    ->where('is_active', true)
-                    ->orderBy('sort_order')
-                    ->orderBy('id'),
-                'staffMembers' => fn ($query) => $query
-                    ->where('is_leadership', true)
-                    ->orderBy('sort_order')
-                    ->orderBy('id'),
-            ])
-            ->where('code', '2109104')
-            ->first();
+        $schoolId = (int) $school->id;
 
-        if (! $school) {
-            $school = School::query()
-                ->with([
-                    'programs' => fn ($query) => $query
-                        ->where('is_active', true)
-                        ->orderBy('sort_order')
-                        ->orderBy('id'),
-                    'staffMembers' => fn ($query) => $query
-                        ->where('is_leadership', true)
-                        ->orderBy('sort_order')
-                        ->orderBy('id'),
-                ])
-                ->first();
-        }
+        $studentsCount = $this->countWhereSchool('students', $schoolId);
+        $staffCount = $this->countWhereSchool('staff_records', $schoolId);
+        $attendanceRate = $this->attendanceRateToday($schoolId);
+        $feeCollectionRate = $this->feeCollectionRate($schoolId);
+        $examReadinessRate = $this->examReadinessRate($schoolId);
 
-        $schoolPayload = $school
-            ? [
+        return Inertia::render('Vigurungani', [
+            'school' => [
                 'id' => $school->id,
                 'name' => $school->name,
                 'slug' => $school->slug,
@@ -51,53 +31,123 @@ class SchoolPageController extends Controller
                 'status' => $school->status,
                 'note' => $school->note,
                 'code' => $school->code,
-                'logo_url' => $this->assetUrl($school->logo_path),
-                'hero_image_url' => $this->assetUrl($school->hero_image_path),
-            ]
-            : null;
-
-        $programsPayload = $school
-            ? $school->programs->map(fn ($program) => [
-                'id' => $program->id,
-                'title' => $program->title,
-                'slug' => $program->slug,
-                'summary' => $program->summary,
-                'details' => $program->details,
-                'image_url' => $this->assetUrl($program->image_path),
-            ])->values()
-            : collect();
-
-        $leadershipPayload = $school
-            ? $school->staffMembers->map(fn ($member) => [
-                'id' => $member->id,
-                'name' => $member->name,
-                'role' => $member->role,
-                'department' => $member->department,
-                'bio' => $member->bio,
-            ])->values()
-            : collect();
-
-        return Inertia::render('Vigurungani', [
-            'school' => $schoolPayload,
-            'programs' => $programsPayload,
-            'leadershipTeam' => $leadershipPayload,
+                'logo_path' => $school->logo_path,
+                'hero_image_path' => $school->hero_image_path,
+                'logo_url' => $school->logo_path ?: '/images/logo.png',
+                'motto' => $school->note ?: 'A disciplined, data-driven school community focused on growth and accountability.',
+            ],
+            'metrics' => [
+                'students_count' => $studentsCount,
+                'staff_count' => $staffCount,
+                'attendance_rate_today' => $attendanceRate,
+                'fee_collection_rate' => $feeCollectionRate,
+                'exam_readiness_rate' => $examReadinessRate,
+            ],
         ]);
     }
 
-    private function assetUrl(?string $path): ?string
+    private function countWhereSchool(string $table, int $schoolId): int
     {
-        if (! $path) {
-            return null;
+        if (! Schema::hasTable($table) || ! Schema::hasColumn($table, 'school_id')) {
+            return 0;
         }
 
-        if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
-            return $path;
+        return (int) DB::table($table)->where('school_id', $schoolId)->count();
+    }
+
+    private function attendanceRateToday(int $schoolId): int
+    {
+        // Supports table: attendances with is_present boolean and school_id.
+        if (! Schema::hasTable('attendances')
+            || ! Schema::hasColumn('attendances', 'school_id')
+            || ! Schema::hasColumn('attendances', 'is_present')) {
+            return 0;
         }
 
-        if (str_starts_with($path, '/')) {
-            return $path;
+        $query = DB::table('attendances')->where('school_id', $schoolId);
+
+        if (Schema::hasColumn('attendances', 'attendance_date')) {
+            $query->whereDate('attendance_date', now()->toDateString());
+        } elseif (Schema::hasColumn('attendances', 'created_at')) {
+            $query->whereDate('created_at', now()->toDateString());
         }
 
-        return Storage::url($path);
+        $total = (clone $query)->count();
+        if ($total === 0) {
+            return 0;
+        }
+
+        $present = (clone $query)->where('is_present', true)->count();
+
+        return (int) round(($present / $total) * 100);
+    }
+
+    private function feeCollectionRate(int $schoolId): int
+    {
+        // Supports tables:
+        // student_finance_accounts (expected_amount, school_id)
+        // student_finance_payments (amount, school_id)
+        if (! Schema::hasTable('student_finance_accounts')
+            || ! Schema::hasTable('student_finance_payments')
+            || ! Schema::hasColumn('student_finance_accounts', 'school_id')
+            || ! Schema::hasColumn('student_finance_payments', 'school_id')) {
+            return 0;
+        }
+
+        $expected = 0.0;
+        if (Schema::hasColumn('student_finance_accounts', 'expected_amount')) {
+            $expected = (float) DB::table('student_finance_accounts')
+                ->where('school_id', $schoolId)
+                ->sum('expected_amount');
+        }
+
+        $paid = 0.0;
+        if (Schema::hasColumn('student_finance_payments', 'amount')) {
+            $paid = (float) DB::table('student_finance_payments')
+                ->where('school_id', $schoolId)
+                ->sum('amount');
+        }
+
+        if ($expected <= 0) {
+            return 0;
+        }
+
+        return (int) min(100, round(($paid / $expected) * 100));
+    }
+
+    private function examReadinessRate(int $schoolId): int
+    {
+        // Supports:
+        // exams table (school_id)
+        // exam_results table (school_id, exam_id OR no school_id but exam_id link)
+        if (! Schema::hasTable('exams') || ! Schema::hasColumn('exams', 'school_id')) {
+            return 0;
+        }
+
+        $totalExams = (int) DB::table('exams')->where('school_id', $schoolId)->count();
+        if ($totalExams === 0) {
+            return 0;
+        }
+
+        if (! Schema::hasTable('exam_results')) {
+            return 0;
+        }
+
+        // Count exams that have at least one result posted.
+        $examsWithResults = 0;
+
+        if (Schema::hasColumn('exam_results', 'exam_id')) {
+            $examIds = DB::table('exams')->where('school_id', $schoolId)->pluck('id');
+
+            $resultsQuery = DB::table('exam_results')->whereIn('exam_id', $examIds);
+
+            if (Schema::hasColumn('exam_results', 'school_id')) {
+                $resultsQuery->where('school_id', $schoolId);
+            }
+
+            $examsWithResults = (int) $resultsQuery->distinct('exam_id')->count('exam_id');
+        }
+
+        return (int) round(($examsWithResults / $totalExams) * 100);
     }
 }

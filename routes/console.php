@@ -8,4 +8,5 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-Schedule::command('backup:database --prune=14')->dailyAt('01:00');
+// Daily billing health maintenance.
+Schedule::command('billing:mark-overdue-invoices')->dailyAt('00:10');

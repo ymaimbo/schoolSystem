@@ -43,5 +43,8 @@ class Kernel extends HttpKernel
         'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
 
         'role' => \App\Http\Middleware\EnsureUserHasRole::class,
+
+        // Multi-school resolver
+        'resolve.school' => \App\Http\Middleware\ResolveSchool::class,
     ];
 }

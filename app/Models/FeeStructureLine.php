@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToSchool;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,9 +10,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class FeeStructureLine extends Model
 {
-    use HasFactory;
+    use HasFactory, BelongsToSchool;
 
     protected $fillable = [
+        'school_id',
         'fee_structure_id',
         'vote_head_id',
         'govt_capitation_amount',
@@ -33,9 +35,9 @@ class FeeStructureLine extends Model
         'sort_order' => 'integer',
     ];
 
-    public function structure(): BelongsTo
+    public function feeStructure(): BelongsTo
     {
-        return $this->belongsTo(FeeStructure::class, 'fee_structure_id');
+        return $this->belongsTo(FeeStructure::class);
     }
 
     public function voteHead(): BelongsTo

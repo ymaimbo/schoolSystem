@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToSchool;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,9 +10,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class StudentFeeAccount extends Model
 {
-    use HasFactory;
+    use HasFactory, BelongsToSchool;
 
     protected $fillable = [
+        'school_id',
         'student_id',
         'fee_structure_id',
         'total_fee_due',
@@ -29,18 +31,18 @@ class StudentFeeAccount extends Model
         return $this->belongsTo(Student::class);
     }
 
-    public function feeStructure(): BelongsTo
-    {
-        return $this->belongsTo(FeeStructure::class);
-    }
-
     public function payments(): HasMany
     {
         return $this->hasMany(StudentFeePayment::class);
     }
 
+    public function feeStructure(): BelongsTo
+    {
+        return $this->belongsTo(FeeStructure::class);
+    }
+
     public function ledgers(): HasMany
     {
-        return $this->hasMany(StudentFeeLedger::class, 'student_fee_account_id');
+        return $this->hasMany(StudentFeeLedger::class);
     }
 }

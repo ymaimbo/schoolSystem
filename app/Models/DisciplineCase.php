@@ -2,15 +2,17 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\BelongsToSchool;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class DisciplineCase extends Model
 {
-    use HasFactory;
+    use HasFactory, BelongsToSchool;
 
     protected $fillable = [
+        'school_id',
         'subject_type',
         'student_id',
         'worker_name',
@@ -25,6 +27,8 @@ class DisciplineCase extends Model
     ];
 
     protected $casts = [
+        'student_id' => 'integer',
+        'handled_by' => 'integer',
         'reported_on' => 'date',
     ];
 

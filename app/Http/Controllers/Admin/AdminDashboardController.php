@@ -3,15 +3,10 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\DisciplineCase;
-use App\Models\Exam;
-use App\Models\FinanceTransaction;
-use App\Models\InventoryItem;
-use App\Models\ParentMessage;
-use App\Models\SportsDepartmentRecord;
-use App\Models\StaffRecord;
-use App\Models\Student;
-use App\Models\Timetable;
+use App\Models\ClassTeacherAssignment;
+use App\Models\User;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -19,97 +14,115 @@ class AdminDashboardController extends Controller
 {
     public function __invoke(): Response
     {
-        $role = $this->normalizeRole(auth()->user()?->role ?? '');
+        $user = auth()->user();
+        $school = app('currentSchool');
+
+        $cards = $this->buildCommonCards((int) $school->id);
+        $principalClassStats = null;
+
+        if ($user && $user->role === 'principal') {
+            $principalClassStats = $this->buildPrincipalClassStats((int) $school->id);
+        }
 
         return Inertia::render('Admin/Dashboard', [
-            'role' => $role,
-            'cards' => $this->cardsByRole($role),
+            'role' => $user?->role ?? '',
+            'cards' => $cards,
+            'principalClassStats' => $principalClassStats,
         ]);
     }
 
-    private function normalizeRole(string $role): string
+    private function buildCommonCards(int $schoolId): array
     {
-        return str_replace([' ', '-'], '_', strtolower(trim($role)));
+        $studentsCount = $this->countWhereSchool('students', $schoolId);
+        $staffCount = $this->countWhereSchool('staff_records', $schoolId);
+        $teachersCount = $this->countUsersByRole($schoolId, 'class_teacher');
+        $examsCount = $this->countWhereSchool('exams', $schoolId);
+
+        return [
+            ['title' => 'Students', 'value' => (string) $studentsCount, 'hint' => 'Active learners'],
+            ['title' => 'Staff Records', 'value' => (string) $staffCount, 'hint' => 'Teaching and non-teaching'],
+            ['title' => 'Class Teachers', 'value' => (string) $teachersCount, 'hint' => 'Users with class_teacher role'],
+            ['title' => 'Exams', 'value' => (string) $examsCount, 'hint' => 'Total exams created'],
+        ];
     }
 
-    private function cardsByRole(string $role): array
+    private function buildPrincipalClassStats(int $schoolId): array
     {
-        $financeIncome = (float) FinanceTransaction::where('type', 'income')->sum('amount');
-        $financeExpense = (float) FinanceTransaction::where('type', 'expense')->sum('amount');
+        $assignedTeachers = 0;
+        $unassignedTeachers = 0;
+        $classesWithoutAssignment = 0;
 
-        $storeItems = class_exists(InventoryItem::class) ? InventoryItem::count() : 0;
-        $timetableSlots = class_exists(Timetable::class) ? Timetable::count() : 0;
-        $messages = class_exists(ParentMessage::class) ? ParentMessage::count() : 0;
-        $disciplinePending = class_exists(DisciplineCase::class) ? DisciplineCase::where('status', 'pending')->count() : 0;
-        $disciplineOngoing = class_exists(DisciplineCase::class) ? DisciplineCase::where('status', 'ongoing')->count() : 0;
-        $sportsPlayers = class_exists(SportsDepartmentRecord::class) ? SportsDepartmentRecord::count() : 0;
-        $staffCount = class_exists(StaffRecord::class) ? StaffRecord::count() : 0;
+        if (Schema::hasTable('users')) {
+            $totalClassTeachers = User::query()
+                ->where('school_id', $schoolId)
+                ->where('role', 'class_teacher')
+                ->count();
 
-        if ($role === 'principal') {
-            return [
-                ['title' => 'Total Students', 'value' => Student::count(), 'hint' => 'All enrolled student records'],
-                ['title' => 'Finance Balance', 'value' => number_format($financeIncome - $financeExpense, 2), 'hint' => 'Income minus expense'],
-                ['title' => 'Staff Directory', 'value' => $staffCount, 'hint' => 'Teachers and workers records'],
-                ['title' => 'Discipline Pending', 'value' => $disciplinePending, 'hint' => 'Cases awaiting action'],
-                ['title' => 'Discipline Ongoing', 'value' => $disciplineOngoing, 'hint' => 'Cases under follow-up'],
-                ['title' => 'Sports Players', 'value' => $sportsPlayers, 'hint' => 'Registered players by sport'],
-            ];
+            if (Schema::hasTable('class_teacher_assignments')) {
+                $assignedTeachers = ClassTeacherAssignment::query()
+                    ->where('school_id', $schoolId)
+                    ->where('is_active', true)
+                    ->distinct('user_id')
+                    ->count('user_id');
+            }
+
+            $unassignedTeachers = max(0, (int) $totalClassTeachers - (int) $assignedTeachers);
         }
 
-        if ($role === 'deputy_principal') {
-            return [
-                ['title' => 'Staff Directory', 'value' => $staffCount, 'hint' => 'Teachers and workers records'],
-                ['title' => 'Teachers On Duty', 'value' => class_exists(StaffRecord::class) ? StaffRecord::where('is_on_duty', true)->count() : 0, 'hint' => 'Current duty list'],
-                ['title' => 'Published Exams', 'value' => Exam::where('status', 'published')->count(), 'hint' => 'Academic oversight'],
-                ['title' => 'Discipline Pending', 'value' => $disciplinePending, 'hint' => 'Cases awaiting action'],
-                ['title' => 'Discipline Ongoing', 'value' => $disciplineOngoing, 'hint' => 'Cases under follow-up'],
-                ['title' => 'Timetable Slots', 'value' => $timetableSlots, 'hint' => 'Managed class schedule'],
-            ];
+        if (Schema::hasTable('students') && Schema::hasTable('class_teacher_assignments')) {
+            $studentClassPairs = DB::table('students')
+                ->where('school_id', $schoolId)
+                ->whereNotNull('class_level')
+                ->select('class_level', 'stream')
+                ->distinct()
+                ->get()
+                ->map(fn ($row) => $this->classPairKey($row->class_level, $row->stream))
+                ->values();
+
+            $assignmentPairs = DB::table('class_teacher_assignments')
+                ->where('school_id', $schoolId)
+                ->where('is_active', true)
+                ->select('class_level', 'stream')
+                ->distinct()
+                ->get()
+                ->map(fn ($row) => $this->classPairKey($row->class_level, $row->stream))
+                ->values();
+
+            $classesWithoutAssignment = $studentClassPairs
+                ->diff($assignmentPairs)
+                ->count();
         }
 
-        if ($role === 'dean') {
-            return [
-                ['title' => 'Total Students', 'value' => Student::count(), 'hint' => 'Student registry overview'],
-                ['title' => 'Active Students', 'value' => Student::where('status', 'active')->count(), 'hint' => 'Current active learners'],
-                ['title' => 'Published Exams', 'value' => Exam::where('status', 'published')->count(), 'hint' => 'Exam oversight'],
-                ['title' => 'Discipline Pending', 'value' => $disciplinePending, 'hint' => 'Cases awaiting action'],
-                ['title' => 'Discipline Ongoing', 'value' => $disciplineOngoing, 'hint' => 'Cases under follow-up'],
-                ['title' => 'Messages Sent', 'value' => $messages, 'hint' => 'Parent communication activity'],
-            ];
-        }
-
-        if ($role === 'hod') {
-            return [
-                ['title' => 'Published Exams', 'value' => Exam::where('status', 'published')->count(), 'hint' => 'Department-ready exams'],
-                ['title' => 'Draft Exams', 'value' => Exam::where('status', 'draft')->count(), 'hint' => 'Needs completion'],
-                ['title' => 'Active Students', 'value' => Student::where('status', 'active')->count(), 'hint' => 'Learners under departments'],
-                ['title' => 'Sports Players', 'value' => $sportsPlayers, 'hint' => 'Sports participation'],
-            ];
-        }
-
-        if ($role === 'secretary') {
-            return [
-                ['title' => 'Total Students', 'value' => Student::count(), 'hint' => 'Student registry overview'],
-                ['title' => 'Parent Records', 'value' => Student::whereNotNull('parent_phone')->count(), 'hint' => 'Contact records available'],
-                ['title' => 'Guardian Records', 'value' => Student::whereNotNull('guardian_phone')->count(), 'hint' => 'Guardian contact coverage'],
-                ['title' => 'Messages Sent', 'value' => $messages, 'hint' => 'Parent communication activity'],
-            ];
-        }
-
-        if ($role === 'store_keeper') {
-            return [
-                ['title' => 'Store Items', 'value' => $storeItems, 'hint' => 'Inventory and procurement'],
-                ['title' => 'Active Students', 'value' => Student::where('status', 'active')->count(), 'hint' => 'Learner population support'],
-            ];
-        }
-
-        // accountant
         return [
-            ['title' => 'Finance Income', 'value' => number_format($financeIncome, 2), 'hint' => 'Total income records'],
-            ['title' => 'Finance Expense', 'value' => number_format($financeExpense, 2), 'hint' => 'Total expense records'],
-            ['title' => 'Finance Balance', 'value' => number_format($financeIncome - $financeExpense, 2), 'hint' => 'Current financial standing'],
-            ['title' => 'Students', 'value' => Student::count(), 'hint' => 'Student ledger relevance'],
-            ['title' => 'Store Items', 'value' => $storeItems, 'hint' => 'Inventory and procurement'],
+            'assigned_class_teachers' => (int) $assignedTeachers,
+            'unassigned_class_teachers' => (int) $unassignedTeachers,
+            'classes_without_assignment' => (int) $classesWithoutAssignment,
         ];
+    }
+
+    private function countWhereSchool(string $table, int $schoolId): int
+    {
+        if (! Schema::hasTable($table) || ! Schema::hasColumn($table, 'school_id')) {
+            return 0;
+        }
+
+        return (int) DB::table($table)->where('school_id', $schoolId)->count();
+    }
+
+    private function countUsersByRole(int $schoolId, string $role): int
+    {
+        if (! Schema::hasTable('users')) {
+            return 0;
+        }
+
+        return (int) User::query()
+            ->where('school_id', $schoolId)
+            ->where('role', $role)
+            ->count();
+    }
+
+    private function classPairKey(?string $classLevel, ?string $stream): string
+    {
+        return trim((string) $classLevel).'|'.trim((string) ($stream ?? ''));
     }
 }
