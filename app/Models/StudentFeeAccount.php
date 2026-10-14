@@ -26,14 +26,14 @@ class StudentFeeAccount extends Model
         'total_fee_due' => 'decimal:2',
     ];
 
+    protected $appends = [
+        'balance',
+        'credit_balance',
+    ];
+
     public function student(): BelongsTo
     {
         return $this->belongsTo(Student::class);
-    }
-
-    public function payments(): HasMany
-    {
-        return $this->hasMany(StudentFeePayment::class);
     }
 
     public function feeStructure(): BelongsTo
@@ -41,8 +41,25 @@ class StudentFeeAccount extends Model
         return $this->belongsTo(FeeStructure::class);
     }
 
+    public function payments(): HasMany
+    {
+        return $this->hasMany(StudentFeePayment::class, 'student_fee_account_id');
+    }
+
     public function ledgers(): HasMany
     {
-        return $this->hasMany(StudentFeeLedger::class);
+        return $this->hasMany(StudentFeeLedger::class, 'student_fee_account_id');
+    }
+
+    public function getBalanceAttribute(): float
+    {
+        $due = (float) ($this->total_fee_due ?? 0);
+        return $due > 0 ? $due : 0.0;
+    }
+
+    public function getCreditBalanceAttribute(): float
+    {
+        $due = (float) ($this->total_fee_due ?? 0);
+        return $due < 0 ? abs($due) : 0.0;
     }
 }

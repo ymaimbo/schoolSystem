@@ -1,10 +1,12 @@
 <?php
+// app/Models/Student.php
 
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToSchool;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -32,12 +34,35 @@ class Student extends Model
         'form_level',
         'stream',
         'status',
+        'fee_profile_id',
     ];
 
     protected $casts = [
         'form_level' => 'integer',
         'entry_marks' => 'decimal:2',
+        'fee_profile_id' => 'integer',
     ];
+
+    protected static function booted(): void
+    {
+        static::creating(function (Student $student) {
+            if (!$student->school_id && app()->bound('currentSchool') && app('currentSchool')) {
+                $student->school_id = (int) app('currentSchool')->id;
+            }
+
+            if ($student->entry_marks === null || $student->entry_marks === '') {
+                $student->entry_marks = 0;
+            }
+
+            if (!$student->status) {
+                $student->status = 'active';
+            }
+
+            if (!$student->contact_preference) {
+                $student->contact_preference = 'parent';
+            }
+        });
+    }
 
     public function examResults(): HasMany
     {
@@ -57,6 +82,11 @@ class Student extends Model
     public function feePayments(): HasMany
     {
         return $this->hasMany(StudentFeePayment::class);
+    }
+
+    public function feeProfile(): BelongsTo
+    {
+        return $this->belongsTo(FeeProfile::class, 'fee_profile_id');
     }
 
     public function getFullNameAttribute(): string

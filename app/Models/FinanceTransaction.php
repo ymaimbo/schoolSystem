@@ -5,25 +5,33 @@ namespace App\Models;
 use App\Models\Concerns\BelongsToSchool;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class FinanceTransaction extends Model
 {
-    use HasFactory, SoftDeletes, BelongsToSchool;
+    use HasFactory, BelongsToSchool;
 
     protected $fillable = [
         'school_id',
-        'entry_date',
         'type',
         'category',
-        'description',
         'amount',
-        'payment_method',
+        'status',
+        'entry_date',
+        'description',
+        'source_module',
         'reference_no',
+        'meta',
     ];
 
     protected $casts = [
-        'entry_date' => 'date',
         'amount' => 'decimal:2',
+        'entry_date' => 'date',
+        'meta' => 'array',
     ];
+
+    public function school(): BelongsTo
+    {
+        return $this->belongsTo(School::class);
+    }
 }

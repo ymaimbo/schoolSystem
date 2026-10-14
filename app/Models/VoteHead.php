@@ -31,4 +31,9 @@ class VoteHead extends Model
     {
         return $this->hasMany(StudentFeeLedger::class);
     }
+
+    public function allocations(): HasMany
+    {
+        return $this->hasMany(StudentFeeAllocation::class);
+    }
 }

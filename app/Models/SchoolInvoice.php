@@ -10,7 +10,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class SchoolInvoice extends Model
 {
-    use HasFactory, BelongsToSchool;
+    use HasFactory;
+    use BelongsToSchool;
 
     protected $fillable = [
         'school_id',
@@ -45,5 +46,15 @@ class SchoolInvoice extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function scopeOpen($query)
+    {
+        return $query->whereIn('status', ['unpaid', 'partial', 'overdue']);
+    }
+
+    public function getPaidAmountAttribute(): float
+    {
+        return max(0, (float) $this->invoiced_amount - (float) $this->balance_amount);
     }
 }

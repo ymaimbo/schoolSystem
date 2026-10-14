@@ -23,11 +23,22 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\SchoolPageController;
 use App\Http\Controllers\SchoolRegistrationController;
 use App\Http\Controllers\SuperAdmin\InvoiceManagementController;
+use App\Http\Controllers\SuperAdmin\SchoolBillingAccessController;
 use Illuminate\Support\Facades\Route;
 
+/*
+|--------------------------------------------------------------------------
+| Public
+|--------------------------------------------------------------------------
+*/
 Route::get('/', PlatformHomeController::class)->name('home');
 Route::get('/schools/{school:slug}', SchoolPageController::class)->name('schools.show');
 
+/*
+|--------------------------------------------------------------------------
+| Super Admin
+|--------------------------------------------------------------------------
+*/
 Route::middleware(['auth', 'verified', 'role:super_admin'])
     ->prefix('super-admin')
     ->name('superadmin.')
@@ -36,24 +47,33 @@ Route::middleware(['auth', 'verified', 'role:super_admin'])
 
         Route::get('/schools/register', [SchoolRegistrationController::class, 'create'])->name('schools.register');
         Route::post('/schools/register', [SchoolRegistrationController::class, 'store'])->name('schools.store');
-        Route::post('/schools/{school}/create-principal', [SchoolRegistrationController::class, 'createPrincipalForSchool'])->name('schools.principal.store');
+        Route::post('/schools/{school}/principal', [SchoolRegistrationController::class, 'storePrincipalForSchool'])->name('schools.principal.store');
         Route::put('/schools/{school}', [SchoolRegistrationController::class, 'updateSchool'])->name('schools.update');
         Route::put('/principals/{principal}', [SchoolRegistrationController::class, 'updatePrincipal'])->name('principals.update');
 
+        Route::get('/schools/{school}/billing-access', [SchoolBillingAccessController::class, 'edit'])->name('schools.billing-access.edit');
+        Route::put('/schools/{school}/billing-access', [SchoolBillingAccessController::class, 'update'])->name('schools.billing-access.update');
+        Route::post('/schools/{school}/billing-access/recalculate', [SchoolBillingAccessController::class, 'recalculate'])->name('schools.billing-access.recalculate');
+
         Route::get('/billing', [InvoiceManagementController::class, 'index'])->name('billing.index');
         Route::post('/billing', [InvoiceManagementController::class, 'store'])->name('billing.store');
-        Route::get('/billing/{invoice}/edit', [InvoiceManagementController::class, 'edit'])->name('billing.edit');
-        Route::put('/billing/{invoice}', [InvoiceManagementController::class, 'update'])->name('billing.update');
+        Route::get('/billing/invoice/{invoice}/edit', [InvoiceManagementController::class, 'edit'])->name('billing.edit');
+        Route::put('/billing/invoice/{invoice}', [InvoiceManagementController::class, 'update'])->name('billing.update');
     });
 
-Route::middleware(['auth', 'verified', 'resolve.school'])->group(function () {
+/*
+|--------------------------------------------------------------------------
+| School-scoped authenticated
+|--------------------------------------------------------------------------
+*/
+Route::middleware(['auth', 'verified', 'resolve_school'])->group(function () {
     Route::get('/dashboard', fn () => redirect()->route('admin.dashboard'))->name('dashboard');
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
-    Route::prefix('admin')->name('admin.')->group(function () {
+    Route::prefix('admin')->name('admin.')->middleware('billing.access')->group(function () {
         Route::get('/', AdminDashboardController::class)->name('dashboard');
 
         // Students
@@ -70,27 +90,22 @@ Route::middleware(['auth', 'verified', 'resolve.school'])->group(function () {
             Route::delete('/students/{student}', [StudentController::class, 'destroy'])->name('students.destroy');
         });
 
-        // Programs + Exams (full control roles)
+        // Programs + Exams
         Route::middleware('role:principal,deputy_principal,dean')->group(function () {
-            // Programs
             Route::get('/programs', [ProgramAdminController::class, 'index'])->name('programs.index');
             Route::post('/programs', [ProgramAdminController::class, 'store'])->name('programs.store');
             Route::put('/programs/{program}', [ProgramAdminController::class, 'update'])->name('programs.update');
             Route::delete('/programs/{program}', [ProgramAdminController::class, 'destroy'])->name('programs.destroy');
 
-            // Exam CRUD (full rights)
             Route::get('/exams', [ExamController::class, 'index'])->name('exams.index');
             Route::post('/exams', [ExamController::class, 'store'])->name('exams.store');
             Route::put('/exams/{exam}', [ExamController::class, 'update'])->name('exams.update');
             Route::delete('/exams/{exam}', [ExamController::class, 'destroy'])->name('exams.destroy');
         });
 
-        // Results mutation routes:
-        // allow full roles + class_teacher + subject_teacher
-        // strict data-level scope is enforced by ExamResultPolicy/controller authorize calls.
         Route::middleware('role:principal,deputy_principal,dean,class_teacher,subject_teacher')->group(function () {
             Route::post('/exams/{exam}/results', [ExamController::class, 'storeResult'])->name('exams.results.store');
-            Route::post('/exams/{exam}/missing-results', [ExamController::class, 'storeMissingResults'])->name('exams.results.missing.store');
+            Route::post('/exams/{exam}/missing/results', [ExamController::class, 'storeMissingResult'])->name('exams.results.missing.store');
             Route::put('/exams/{exam}/results/{examResult}', [ExamController::class, 'updateResult'])->name('exam-results.update');
             Route::delete('/exams/{exam}/results/{examResult}', [ExamController::class, 'destroyResult'])->name('exam-results.destroy');
         });
@@ -103,32 +118,38 @@ Route::middleware(['auth', 'verified', 'resolve.school'])->group(function () {
             Route::delete('/timetable/{timetable}', [TimetableController::class, 'destroy'])->name('timetable.destroy');
         });
 
-        // Finance
+        // Finance + Billing
         Route::middleware('role:principal,accountant')->group(function () {
+            // admin.finance.*
             Route::get('/finance', [FinanceController::class, 'index'])->name('finance.index');
             Route::post('/finance', [FinanceController::class, 'store'])->name('finance.store');
             Route::put('/finance/{financeTransaction}', [FinanceController::class, 'update'])->name('finance.update');
             Route::delete('/finance/{financeTransaction}', [FinanceController::class, 'destroy'])->name('finance.destroy');
 
+            // admin.finance.voucher.*
             Route::post('/finance/voucher', [FinanceController::class, 'storeVoucher'])->name('finance.voucher.store');
             Route::delete('/finance/voucher/{voucher}', [FinanceController::class, 'destroyVoucher'])->name('finance.voucher.destroy');
             Route::get('/finance/voucher/{voucher}/print', [FinanceController::class, 'printVoucher'])->name('finance.voucher.print');
 
+            // admin.finance.fee-structures.*
             Route::get('/finance/fee-structures', [FeeStructureController::class, 'index'])->name('finance.fee-structures.index');
             Route::post('/finance/fee-structures', [FeeStructureController::class, 'store'])->name('finance.fee-structures.store');
             Route::get('/finance/fee-structures/{feeStructure}/edit', [FeeStructureController::class, 'edit'])->name('finance.fee-structures.edit');
             Route::put('/finance/fee-structures/{feeStructure}', [FeeStructureController::class, 'update'])->name('finance.fee-structures.update');
             Route::delete('/finance/fee-structures/{feeStructure}', [FeeStructureController::class, 'destroy'])->name('finance.fee-structures.destroy');
 
+            // admin.student-finance.*
             Route::get('/student-finance', [StudentFinanceController::class, 'index'])->name('student-finance.index');
             Route::post('/student-finance/account', [StudentFinanceController::class, 'storeAccount'])->name('student-finance.account.upsert');
             Route::post('/student-finance/payment', [StudentFinanceController::class, 'storePayment'])->name('student-finance.payment.store');
             Route::delete('/student-finance/payment/{payment}', [StudentFinanceController::class, 'destroyPayment'])->name('student-finance.payment.destroy');
-            Route::get('/student-finance/receipt/{payment}/print', [StudentFinanceController::class, 'printReceipt'])->name('student-finance.receipt.print');
+            Route::get('/student-finance/receipt/{payment}', [StudentFinanceController::class, 'printReceipt'])->name('student-finance.receipt.print');
+            Route::get('/student-finance/votehead-report', [StudentFinanceController::class, 'voteheadReport'])->name('student-finance.votehead.report');
 
+            // admin.billing.*
             Route::get('/billing', [BillingController::class, 'index'])->name('billing.index');
             Route::get('/billing/invoices/{invoice}', [BillingController::class, 'show'])->name('billing.show');
-            Route::post('/billing/invoices/{invoice}/payments', [BillingController::class, 'storePayment'])->name('billing.payments.store');
+            Route::post('/billing/invoices/{invoice}/payment', [BillingController::class, 'storePayment'])->name('billing.payments.store');
             Route::get('/billing/receipts/{payment}/print', [BillingController::class, 'printReceipt'])->name('billing.receipts.print');
             Route::get('/billing/receipts/{payment}/mpesa', [BillingController::class, 'mpesaReceipt'])->name('billing.receipts.mpesa');
             Route::get('/billing/receipts/{payment}/pdf', [BillingController::class, 'downloadReceiptPdf'])->name('billing.receipts.pdf');
@@ -190,7 +211,7 @@ Route::middleware(['auth', 'verified', 'resolve.school'])->group(function () {
             Route::delete('/class-teacher-assignments/{assignment}', [ClassTeacherAssignmentController::class, 'destroy'])->name('class-teacher-assignments.destroy');
         });
 
-        // Class teacher portal
+        // Class-room portal
         Route::middleware(['role:class_teacher', 'class.teacher.scope'])
             ->prefix('class-room')
             ->name('class-room.')
@@ -200,7 +221,7 @@ Route::middleware(['auth', 'verified', 'resolve.school'])->group(function () {
                 Route::post('/exams/{exam}/marks', [ClassTeacherPortalController::class, 'storeExamMarks'])->name('exams.marks.store');
             });
 
-        // Subject teacher portal
+        // Subject-room portal
         Route::middleware(['role:subject_teacher', 'subject.teacher.scope'])
             ->prefix('subject-room')
             ->name('subject-room.')

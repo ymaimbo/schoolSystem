@@ -1,4 +1,5 @@
 <?php
+// app/Http/Kernel.php
 
 namespace App\Http;
 
@@ -44,7 +45,11 @@ class Kernel extends HttpKernel
 
         'role' => \App\Http\Middleware\EnsureUserHasRole::class,
 
-        // Multi-school resolver
+        // keep both to support existing and newer route styles
         'resolve.school' => \App\Http\Middleware\ResolveSchool::class,
+        'resolve_school' => \App\Http\Middleware\ResolveSchool::class,
+
+        // school-level billing role gate
+        'billing.access' => \App\Http\Middleware\EnforceSchoolBillingAccess::class,
     ];
 }
