@@ -11,6 +11,19 @@ class StudentFeeAllocation extends Model
 {
     use HasFactory, BelongsToSchool;
 
+    /**
+     * Live schema columns (student_fee_allocations):
+     *   id, school_id, student_fee_payment_id, student_fee_ledger_id,
+     *   vote_head_id (nullable FK → vote_heads),
+     *   allocated_amount decimal(12,2) NOT NULL,
+     *   amount decimal(12,2) nullable (legacy duplicate),
+     *   allocation_order int unsigned NOT NULL default 0,
+     *   status varchar(20) DEFAULT 'active'   ← NEW (Migration 1)
+     *   created_at, updated_at
+     *
+     * Intentionally omitted (do NOT exist on live table):
+     *   recorded_by
+     */
     protected $fillable = [
         'school_id',
         'student_fee_payment_id',
@@ -19,12 +32,12 @@ class StudentFeeAllocation extends Model
         'allocated_amount',
         'amount',
         'allocation_order',
-        'recorded_by',
+        'status',
     ];
 
     protected $casts = [
         'allocated_amount' => 'decimal:2',
-        'amount' => 'decimal:2',
+        'amount'           => 'decimal:2',
         'allocation_order' => 'integer',
     ];
 
@@ -32,6 +45,8 @@ class StudentFeeAllocation extends Model
         'applied_amount',
         'vote_head_name',
     ];
+
+    // ── Relationships ────────────────────────────────────────────────────
 
     public function payment(): BelongsTo
     {
@@ -48,11 +63,12 @@ class StudentFeeAllocation extends Model
         return $this->belongsTo(VoteHead::class);
     }
 
+    // ── Accessors ────────────────────────────────────────────────────────
+
     public function getAppliedAmountAttribute(): float
     {
         $allocated = $this->attributes['allocated_amount'] ?? null;
-        $legacy = $this->attributes['amount'] ?? null;
-        return round((float) ($allocated ?? $legacy ?? 0), 2);
+        return round((float) ($allocated ?? $this->attributes['amount'] ?? 0), 2);
     }
 
     public function getVoteHeadNameAttribute(): ?string
@@ -61,7 +77,7 @@ class StudentFeeAllocation extends Model
             return $this->voteHead->name;
         }
 
-        if ($this->relationLoaded('ledger') && $this->ledger?->relationLoaded('voteHead') && $this->ledger->voteHead) {
+        if ($this->relationLoaded('ledger') && $this->ledger?->relationLoaded('voteHead') && $this->ledger?->voteHead) {
             return $this->ledger->voteHead->name;
         }
 

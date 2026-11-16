@@ -1,4 +1,4 @@
-System Summary (Notebook Version)
+System Summary 
 
 1. What This System Is
 

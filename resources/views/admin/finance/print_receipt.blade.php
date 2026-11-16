@@ -37,6 +37,10 @@
         .actions { margin-top:16px; text-align:right; }
         .btn { border:1px solid #0f172a; background:#0f172a; color:#fff; padding:8px 13px; font-size:13px; cursor:pointer; }
 
+        /* FIX: Reversed payment banner styling */
+        .reversed-banner { border:2px solid #dc2626; background:#fef2f2; color:#991b1b; padding:12px 16px; margin-bottom:16px; font-size:14px; font-weight:700; text-align:center; text-transform:uppercase; letter-spacing:.5px; }
+        .reversed-banner small { display:block; font-weight:400; font-size:12px; text-transform:none; letter-spacing:normal; margin-top:4px; color:#b91c1c; }
+
         @media print {
             body { padding:0; }
             .container { border:none !important; }
@@ -58,14 +62,16 @@
         $schoolLogoUrl = asset('images/school-logo.png');
     }
 
-    // Normalize breakdown amounts for legacy/new columns.
+    $isReversed = ($payment->status ?? 'active') === 'reversed';
+
+    // Normalize breakdown amounts
     $normalizedBreakdown = collect($breakdown ?? collect())->map(function ($line) {
         $amount = (float) (($line->allocated_amount ?? null) ?? ($line->amount ?? 0));
-
         return (object) [
             'vote_head_name' => $line->vote_head_name ?? 'Unspecified Votehead',
             'vote_head_code' => $line->vote_head_code ?? null,
-            'amount' => round($amount, 2),
+            'amount'         => round($amount, 2),
+            'status'         => $line->status ?? 'active',
         ];
     });
 
@@ -74,6 +80,18 @@
 @endphp
 
 <div class="container">
+
+    {{-- FIX: REVERSED BANNER --}}
+    @if($isReversed)
+        <div class="reversed-banner">
+            ⚠ THIS PAYMENT HAS BEEN REVERSED — RECEIPT IS VOID
+            <small>
+                Reversed on {{ optional($payment->reversed_at)->format('Y-m-d H:i') ?? 'N/A' }}
+                @if($payment->reversal_reason) — Reason: {{ $payment->reversal_reason }} @endif
+            </small>
+        </div>
+    @endif
+
     <div class="header">
         <div class="brand">
             @if($schoolLogoUrl)
@@ -100,13 +118,14 @@
             <div class="row"><span class="label">Date Paid</span><span class="value">{{ optional($payment->paid_at)->format('Y-m-d') ?? 'N/A' }}</span></div>
             <div class="row"><span class="label">Method</span><span class="value">{{ strtoupper($payment->payment_method ?? 'N/A') }}</span></div>
             <div class="row"><span class="label">Reference</span><span class="value">{{ $payment->organization_id ?: ($payment->receipt_no ?? 'N/A') }}</span></div>
-            <div class="row"><span class="label">Recorded By User ID</span><span class="value">{{ $payment->recorded_by ?? 'N/A' }}</span></div>
+            {{-- FIX: Show recorder name instead of ID if available --}}
+            <div class="row"><span class="label">Recorded By</span><span class="value">{{ optional($payment->recorder)->name ?? ('User #' . ($payment->recorded_by ?? 'N/A')) }}</span></div>
         </div>
     </div>
 
-    <div class="amount-box">
+    <div class="amount-box" @if($isReversed) style="border-color:#dc2626;background:#fef2f2;" @endif>
         <div class="row" style="margin:0;"><span class="label" style="font-size:15px;">Amount Received (KES)</span></div>
-        <p class="amount">{{ number_format((float)($payment->amount ?? 0), 2) }}</p>
+        <p class="amount" @if($isReversed) style="color:#dc2626;text-decoration:line-through;" @endif>{{ number_format((float)($payment->amount ?? 0), 2) }}</p>
     </div>
 
     <div class="breakdown">
@@ -120,10 +139,11 @@
             </thead>
             <tbody>
             @forelse($normalizedBreakdown as $line)
-                <tr>
+                {{-- FIX: Strikethrough reversed allocations --}}
+                <tr @if(($line->status ?? 'active') === 'reversed') style="color:#94a3b8;text-decoration:line-through;" @endif>
                     <td>
                         @if(!empty($line->vote_head_code))
-                            {{ $line->vote_head_code }} - 
+                            {{ $line->vote_head_code }} -
                         @endif
                         {{ $line->vote_head_name }}
                     </td>

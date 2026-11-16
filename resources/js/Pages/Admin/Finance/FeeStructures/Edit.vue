@@ -7,7 +7,7 @@ const props = defineProps({
   structure: { type: Object, required: true },
   voteHeads: { type: Array, default: () => [] },
   categories: { type: Array, default: () => [] },
-  feeProfiles: { type: Array, default: () => [] },
+  // FIX: fee_profile_id removed from structure data entirely
 })
 
 const page = usePage()
@@ -21,10 +21,6 @@ const endpoints = {
 const form = useForm({
   name: props.structure.name || '',
   year: props.structure.year || new Date().getFullYear(),
-  fee_profile_id:
-    props.structure.fee_profile_id ??
-    props.structure.feeProfile?.id ??
-    '',
   category: props.structure.category || (props.categories[0] ?? 'day_scholar'),
   class_level: props.structure.class_level || '',
   notes: props.structure.notes || '',
@@ -59,21 +55,26 @@ const removeLine = (idx) => {
 }
 
 const lineTermTotal = (line) =>
-  Number(line.term1_amount || 0) + Number(line.term2_amount || 0) + Number(line.term3_amount || 0)
+  Number(line.term1_amount || 0) +
+  Number(line.term2_amount || 0) +
+  Number(line.term3_amount || 0)
 
 const syncLineTotal = (line) => {
   line.total_amount = Number(line.parent_total_amount || lineTermTotal(line) || 0)
 }
 
 const totals = computed(() => {
-  return form.lines.reduce((acc, r) => {
-    acc.govt += Number(r.govt_capitation_amount || 0)
-    acc.parent += Number(r.parent_total_amount || 0)
-    acc.t1 += Number(r.term1_amount || 0)
-    acc.t2 += Number(r.term2_amount || 0)
-    acc.t3 += Number(r.term3_amount || 0)
-    return acc
-  }, { govt: 0, parent: 0, t1: 0, t2: 0, t3: 0 })
+  return form.lines.reduce(
+    (acc, r) => {
+      acc.govt   += Number(r.govt_capitation_amount || 0)
+      acc.parent += Number(r.parent_total_amount || 0)
+      acc.t1     += Number(r.term1_amount || 0)
+      acc.t2     += Number(r.term2_amount || 0)
+      acc.t3     += Number(r.term3_amount || 0)
+      return acc
+    },
+    { govt: 0, parent: 0, t1: 0, t2: 0, t3: 0 }
+  )
 })
 
 const hasDuplicateVoteHeads = computed(() => {
@@ -83,11 +84,12 @@ const hasDuplicateVoteHeads = computed(() => {
   return new Set(ids).size !== ids.length
 })
 
+// FIX: fee_profile_id removed from validation
 const validateForm = () => {
   form.clearErrors()
 
-  if (!form.fee_profile_id) {
-    form.setError('fee_profile_id', 'Fee profile is required.')
+  if (!form.name?.trim()) {
+    form.setError('name', 'Structure name is required.')
     return false
   }
 
@@ -101,9 +103,8 @@ const validateForm = () => {
     return false
   }
 
-  const missingVoteHead = form.lines.some((l) => !l.vote_head_id)
-  if (missingVoteHead) {
-    form.setError('lines', 'Each line must have a votehead.')
+  if (form.lines.some((l) => !l.vote_head_id)) {
+    form.setError('lines', 'Each line must have a votehead selected.')
     return false
   }
 
@@ -120,22 +121,24 @@ const submit = () => {
     }))
     .sort((a, b) => Number(a.sort_order) - Number(b.sort_order))
     .map((line, idx) => ({
-      vote_head_id: Number(line.vote_head_id),
+      vote_head_id:           Number(line.vote_head_id),
       govt_capitation_amount: Number(line.govt_capitation_amount || 0),
-      parent_total_amount: Number(line.parent_total_amount || 0),
-      term1_amount: Number(line.term1_amount || 0),
-      term2_amount: Number(line.term2_amount || 0),
-      term3_amount: Number(line.term3_amount || 0),
-      total_amount: Number(line.parent_total_amount || lineTermTotal(line) || 0),
-      sort_order: idx + 1,
+      parent_total_amount:    Number(line.parent_total_amount || 0),
+      term1_amount:           Number(line.term1_amount || 0),
+      term2_amount:           Number(line.term2_amount || 0),
+      term3_amount:           Number(line.term3_amount || 0),
+      total_amount:           Number(line.parent_total_amount || lineTermTotal(line) || 0),
+      sort_order:             idx + 1,
     }))
 
   form
     .transform((data) => ({
-      ...data,
-      year: Number(data.year),
-      fee_profile_id: Number(data.fee_profile_id),
-      lines: normalizedLines,
+      name:        data.name,
+      year:        Number(data.year),
+      category:    data.category,
+      class_level: data.class_level || null,
+      notes:       data.notes || null,
+      lines:       normalizedLines,
     }))
     .put(endpoints.update(props.structure.id), {
       preserveScroll: true,
@@ -147,6 +150,9 @@ const fmt = (v) =>
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })
+
+const voteHeadCode = (id) =>
+  props.voteHeads.find((v) => Number(v.id) === Number(id))?.code ?? ''
 </script>
 
 <template>
@@ -155,23 +161,26 @@ const fmt = (v) =>
   <AdminLayout>
     <main class="min-h-screen bg-slate-950 text-slate-100">
       <div class="mx-auto w-full max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
+        
+        <!-- Header -->
         <section class="rounded-2xl border border-white/10 bg-slate-900/70 p-6">
           <div class="flex items-center justify-between">
             <div>
               <h1 class="text-2xl font-bold tracking-tight text-white">Edit Fee Structure</h1>
               <p class="mt-1 text-sm text-slate-300">
-                Update fee profile mapping and votehead lines for this structure.
+                Update category, votehead lines, and amounts for this structure.
               </p>
             </div>
             <Link
               :href="endpoints.index"
-              class="rounded-md border border-white/20 px-3 py-2 text-xs font-medium text-slate-200 hover:bg-white/5"
+              class="rounded-md border border-white/20 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-white/5"
             >
-              Back
+              ← Back
             </Link>
           </div>
         </section>
 
+        <!-- Flash messages -->
         <section v-if="flash.success || flash.error" class="space-y-2">
           <div
             v-if="flash.success"
@@ -188,49 +197,62 @@ const fmt = (v) =>
         </section>
 
         <section class="rounded-2xl border border-white/10 bg-slate-900/70 p-6 space-y-5">
+          <!-- Structure meta fields — FIX: fee_profile_id removed -->
           <div class="grid gap-3 md:grid-cols-2">
-            <input
-              v-model="form.name"
-              type="text"
-              placeholder="Structure name"
-              class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
-            />
+            <div>
+              <label class="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-400">
+                Structure Name
+              </label>
+              <input
+                v-model="form.name"
+                type="text"
+                placeholder="Structure name"
+                class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
+              />
+              <p v-if="form.errors.name" class="mt-1 text-xs text-rose-300">{{ form.errors.name }}</p>
+            </div>
 
-            <input
-              v-model.number="form.year"
-              type="number"
-              min="2020"
-              max="2100"
-              class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
-            />
+            <div>
+              <label class="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-400">
+                Year
+              </label>
+              <input
+                v-model.number="form.year"
+                type="number"
+                min="2000"
+                max="2100"
+                class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
+              />
+            </div>
 
-            <select
-              v-model="form.fee_profile_id"
-              class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
-            >
-              <option value="">Select fee profile...</option>
-              <option v-for="fp in feeProfiles" :key="fp.id" :value="fp.id">
-                {{ fp.code ? `${fp.code} - ` : '' }}{{ fp.name }}
-              </option>
-            </select>
+            <div>
+              <label class="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-400">
+                Category
+              </label>
+              <select
+                v-model="form.category"
+                class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
+              >
+                <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
+              </select>
+            </div>
 
-            <select
-              v-model="form.category"
-              class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
-            >
-              <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
-            </select>
-
-            <input
-              v-model="form.class_level"
-              type="text"
-              placeholder="Class level (optional)"
-              class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400 md:col-span-2"
-            />
+            <div>
+              <label class="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-400">
+                Class Level (optional)
+              </label>
+              <input
+                v-model="form.class_level"
+                type="text"
+                placeholder="Class level (optional)"
+                class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
+              />
+            </div>
           </div>
 
-          <p v-if="form.errors.fee_profile_id" class="text-xs text-rose-300">{{ form.errors.fee_profile_id }}</p>
-          <p v-if="form.errors.lines" class="text-xs text-rose-300">{{ form.errors.lines }}</p>
+          <p v-if="form.errors.lines" class="text-xs text-rose-300">
+            {{ form.errors.lines }}
+          </p>
 
           <textarea
             v-model="form.notes"
@@ -239,7 +261,7 @@ const fmt = (v) =>
             class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
           />
 
-          <div class="flex items-center justify-between">
+          <div class="flex items-center justify-between pt-2">
             <h3 class="text-sm font-semibold text-slate-100">Structure Lines</h3>
             <button
               type="button"
@@ -250,6 +272,7 @@ const fmt = (v) =>
             </button>
           </div>
 
+          <!-- Lines table -->
           <div class="overflow-x-auto rounded-xl border border-white/10">
             <table class="min-w-full text-sm">
               <thead class="bg-slate-950/60 text-left text-slate-300">
@@ -272,80 +295,81 @@ const fmt = (v) =>
                       v-model="line.vote_head_id"
                       class="w-44 rounded border border-white/15 bg-slate-950 px-2 py-1 text-sm text-slate-100"
                     >
-                      <option value="">Select</option>
+                      <option value="">Select...</option>
                       <option v-for="vh in voteHeads" :key="vh.id" :value="vh.id">
                         {{ vh.code }} - {{ vh.name }}
                       </option>
                     </select>
+                    <p class="mt-1 text-[11px] text-slate-400">{{ voteHeadCode(line.vote_head_id) }}</p>
                   </td>
 
                   <td class="px-3 py-2">
                     <input
                       v-model.number="line.govt_capitation_amount"
-                      type="number"
-                      min="0"
-                      step="0.01"
+                      type="number" min="0" step="0.01"
                       class="w-28 rounded border border-white/15 bg-slate-950 px-2 py-1 text-sm text-slate-100"
                     />
                   </td>
+
                   <td class="px-3 py-2">
                     <input
                       v-model.number="line.parent_total_amount"
-                      type="number"
-                      min="0"
-                      step="0.01"
+                      type="number" min="0" step="0.01"
                       class="w-28 rounded border border-white/15 bg-slate-950 px-2 py-1 text-sm text-slate-100"
                       @input="syncLineTotal(line)"
                     />
                   </td>
+
                   <td class="px-3 py-2">
                     <input
                       v-model.number="line.term1_amount"
-                      type="number"
-                      min="0"
-                      step="0.01"
+                      type="number" min="0" step="0.01"
                       class="w-24 rounded border border-white/15 bg-slate-950 px-2 py-1 text-sm text-slate-100"
                       @input="syncLineTotal(line)"
                     />
                   </td>
+
                   <td class="px-3 py-2">
                     <input
                       v-model.number="line.term2_amount"
-                      type="number"
-                      min="0"
-                      step="0.01"
+                      type="number" min="0" step="0.01"
                       class="w-24 rounded border border-white/15 bg-slate-950 px-2 py-1 text-sm text-slate-100"
                       @input="syncLineTotal(line)"
                     />
                   </td>
+
                   <td class="px-3 py-2">
                     <input
                       v-model.number="line.term3_amount"
-                      type="number"
-                      min="0"
-                      step="0.01"
+                      type="number" min="0" step="0.01"
                       class="w-24 rounded border border-white/15 bg-slate-950 px-2 py-1 text-sm text-slate-100"
                       @input="syncLineTotal(line)"
                     />
                   </td>
+
                   <td class="px-3 py-2">
                     <input
                       v-model.number="line.sort_order"
-                      type="number"
-                      min="1"
-                      step="1"
+                      type="number" min="1" step="1"
                       class="w-20 rounded border border-white/15 bg-slate-950 px-2 py-1 text-sm text-slate-100"
                     />
                   </td>
+
                   <td class="px-3 py-2">
-                    <button type="button" class="text-rose-300 hover:text-rose-200" @click="removeLine(idx)">
+                    <button
+                      type="button"
+                      class="text-rose-300 hover:text-rose-200 text-xs"
+                      @click="removeLine(idx)"
+                    >
                       Remove
                     </button>
                   </td>
                 </tr>
 
                 <tr v-if="!form.lines.length">
-                  <td colspan="8" class="px-3 py-5 text-center text-slate-400">No lines added.</td>
+                  <td colspan="8" class="px-3 py-5 text-center text-slate-400 italic">
+                    No lines added.
+                  </td>
                 </tr>
               </tbody>
 
@@ -366,12 +390,13 @@ const fmt = (v) =>
           <button
             type="button"
             :disabled="form.processing"
-            class="rounded-md bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-50"
+            class="rounded-md bg-emerald-500 px-5 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-50 mt-4"
             @click="submit"
           >
             {{ form.processing ? 'Updating...' : 'Update Structure' }}
           </button>
         </section>
+
       </div>
     </main>
   </AdminLayout>

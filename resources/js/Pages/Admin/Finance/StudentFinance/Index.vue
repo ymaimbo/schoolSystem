@@ -40,6 +40,8 @@ const endpoints = {
   voteheadReport: '/admin/student-finance/votehead-report',
 }
 
+/* ── Utility helpers ──────────────────────────────────────────────── */
+
 const normalizeCollection = (input) => {
   if (Array.isArray(input)) return input
   if (!input || typeof input !== 'object') return []
@@ -54,6 +56,8 @@ const toNumber = (value) => {
   const n = Number(value ?? 0)
   return Number.isFinite(n) ? n : 0
 }
+
+const round2 = (n) => Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100
 
 const normalizeId = (value) => {
   if (value === null || value === undefined || value === '') return null
@@ -82,30 +86,22 @@ const paymentMethods = computed(() => {
   return methods.length ? methods : ['cash', 'bank', 'mpesa', 'cheque', 'transfer']
 })
 
-const getStudentId = (student) =>
-  normalizeId(student?.id ?? student?.student_id ?? student?.user_id ?? null)
+/* ── Student helpers ──────────────────────────────────────────────── */
+
+const getStudentId = (student) => normalizeId(student?.id ?? student?.student_id ?? null)
 
 const getStudentName = (student) => {
   if (!student || typeof student !== 'object') return ''
-  const explicit =
-    student.name ??
-    student.full_name ??
-    student.student_name ??
-    student.user?.name ??
-    student.user?.full_name
+  const explicit = student.name ?? student.full_name ?? student.student_name ?? student.user?.name
   if (explicit && String(explicit).trim()) return String(explicit).trim()
 
-  const first = student.first_name ?? student.firstname ?? student.user?.first_name ?? ''
-  const last = student.last_name ?? student.lastname ?? student.user?.last_name ?? ''
+  const first = student.first_name ?? student.firstname ?? ''
+  const last = student.last_name ?? student.lastname ?? ''
   return `${first} ${last}`.trim()
 }
 
 const getAdmissionNo = (student) =>
-  student?.admission_no ??
-  student?.admission_number ??
-  student?.admissionNumber ??
-  student?.adm_no ??
-  ''
+  student?.admission_no ?? student?.admission_number ?? student?.adm_no ?? ''
 
 const buildStudentLabel = (student) => {
   const id = getStudentId(student)
@@ -114,33 +110,19 @@ const buildStudentLabel = (student) => {
   return `${name} (${admission})`
 }
 
-const getStructureId = (structure) =>
-  normalizeId(structure?.id ?? structure?.fee_structure_id ?? structure?.structure_id ?? null)
+/* ── Structure helpers ────────────────────────────────────────────── */
 
-const getStructureName = (structure) =>
-  structure?.name ??
-  structure?.title ??
-  structure?.structure_name ??
-  structure?.fee_name ??
-  structure?.category ??
-  ''
+const getStructureId = (s) => normalizeId(s?.id ?? s?.fee_structure_id ?? null)
+const getStructureName = (s) => s?.name ?? s?.title ?? s?.structure_name ?? ''
+const getStructureAmount = (s) => s?.total_amount ?? s?.amount ?? s?.total ?? s?.expected_amount ?? null
 
-const getStructureAmount = (structure) =>
-  structure?.total_amount ??
-  structure?.amount ??
-  structure?.total ??
-  structure?.expected_amount ??
-  structure?.fee_amount ??
-  null
+/* ── Votehead helpers ─────────────────────────────────────────────── */
 
-const getVoteHeadId = (voteHead) =>
-  normalizeId(voteHead?.id ?? voteHead?.vote_head_id ?? null)
+const getVoteHeadId = (vh) => normalizeId(vh?.id ?? vh?.vote_head_id ?? null)
+const getVoteHeadName = (vh) => vh?.name ?? vh?.title ?? 'Votehead'
+const getVoteHeadCode = (vh) => vh?.code ?? ''
 
-const getVoteHeadName = (voteHead) =>
-  voteHead?.name ?? voteHead?.title ?? voteHead?.votehead_name ?? 'Votehead'
-
-const getVoteHeadCode = (voteHead) =>
-  voteHead?.code ?? voteHead?.votehead_code ?? ''
+/* ── Derived collections ──────────────────────────────────────────── */
 
 const studentsRows = computed(() => normalizeCollection(props.students))
 const voteHeadRows = computed(() => normalizeCollection(props.voteHeads).filter((v) => v?.is_active !== false))
@@ -170,6 +152,8 @@ const studentPickerOptions = computed(() =>
     .sort((a, b) => a.label.localeCompare(b.label))
 )
 
+/* ── Local state mirroring ────────────────────────────────────────── */
+
 const localAccounts = ref([])
 const localPayments = ref([])
 
@@ -196,14 +180,8 @@ const normalizeAccountRow = (row) => {
       row.student_name ??
       row.name ??
       row.student?.name ??
-      row.student?.full_name ??
       `${row.student?.first_name ?? ''} ${row.student?.last_name ?? ''}`.trim(),
-    admission_no:
-      row.admission_no ??
-      row.admission_number ??
-      row.student?.admission_no ??
-      row.student?.admission_number ??
-      '',
+    admission_no: row.admission_no ?? row.student?.admission_no ?? '',
     class_level: row.class_level ?? row.student?.class_level ?? '',
     stream: row.stream ?? row.student?.stream ?? '',
     expected_amount: inferredExpected,
@@ -217,18 +195,18 @@ const normalizeAccountRow = (row) => {
 const normalizePaymentRow = (row) => ({
   ...row,
   id: row.id ?? `pay-${Date.now()}-${Math.random()}`,
-  amount: toNumber(row.amount ?? row.paid_amount ?? 0),
+  amount: toNumber(row.amount ?? 0),
   student_id: normalizeId(row.student_id ?? row.student?.id ?? null),
   student_name:
     row.student_name ??
     row.student?.name ??
-    row.student?.full_name ??
     `${row.student?.first_name ?? ''} ${row.student?.last_name ?? ''}`.trim(),
-  organization_id: row.organization_id ?? row.reference_no ?? row.receipt_no ?? null,
+  status: row.status ?? 'active',
 })
 
 const syncFromProps = () => {
   localAccounts.value = normalizeCollection(props.accounts).map(normalizeAccountRow)
+
   const p = normalizeCollection(props.payments)
   const source = p.length ? p : normalizeCollection(props.recentPayments)
   localPayments.value = source.map(normalizePaymentRow)
@@ -245,6 +223,8 @@ watch(
 const accountsRows = computed(() => localAccounts.value)
 const paymentsRows = computed(() => localPayments.value)
 
+/* ── Filters ──────────────────────────────────────────────────────── */
+
 const search = ref(props.filters?.search ?? '')
 const classFilter = ref(props.filters?.class_level ?? '')
 
@@ -258,19 +238,17 @@ const filteredAccounts = computed(() => {
   const level = classFilter.value
 
   return accountsRows.value.filter((row) => {
-    const studentName = row.student_name ?? ''
-    const admissionNo = row.admission_no ?? ''
-    const rowClassLevel = row.class_level ?? ''
-
     const matchesQ =
       !q ||
-      String(studentName).toLowerCase().includes(q) ||
-      String(admissionNo).toLowerCase().includes(q)
+      String(row.student_name ?? '').toLowerCase().includes(q) ||
+      String(row.admission_no ?? '').toLowerCase().includes(q)
 
-    const matchesClass = !level || String(rowClassLevel) === level
+    const matchesClass = !level || String(row.class_level ?? '') === level
     return matchesQ && matchesClass
   })
 })
+
+/* ── Account form ─────────────────────────────────────────────────── */
 
 const upsertAccountForm = useForm({
   student_id: '',
@@ -282,6 +260,109 @@ const upsertAccountForm = useForm({
   notes: '',
 })
 
+const accountStudentQuery = ref('')
+
+const selectedAccountStudent = computed(() => {
+  const id = normalizeId(upsertAccountForm.student_id)
+  if (id === null) return null
+  return studentsRows.value.find((s) => getStudentId(s) === id) ?? null
+})
+
+const selectedFeeStructure = computed(() => {
+  const id = normalizeId(upsertAccountForm.fee_structure_id)
+  if (id === null) return null
+  return feeStructureRows.value.find((f) => getStructureId(f) === id) ?? null
+})
+
+watch(
+  () => selectedFeeStructure.value,
+  (structure) => {
+    if (!structure) return
+    const amount = getStructureAmount(structure)
+    if (amount !== null && amount !== undefined && amount !== '') {
+      upsertAccountForm.expected_amount = String(amount)
+    }
+  }
+)
+
+const resolveStudentByQuery = (query) => {
+  const q = String(query || '').trim().toLowerCase()
+  if (!q) return null
+
+  const exact = studentPickerOptions.value.find((opt) => opt.label.toLowerCase() === q)
+  if (exact) return exact
+
+  const matches = studentPickerOptions.value.filter(
+    (opt) =>
+      opt.name.includes(q) ||
+      opt.admission.includes(q) ||
+      String(opt.id).toLowerCase().includes(q)
+  )
+
+  return matches.length === 1 ? matches[0] : null
+}
+
+const onAccountStudentInput = () => {
+  if (accountStudentQuery.value !== (selectedAccountStudent.value ? buildStudentLabel(selectedAccountStudent.value) : '')) {
+    upsertAccountForm.student_id = ''
+  }
+}
+
+const resolveAccountStudentQuery = () => {
+  const resolved = resolveStudentByQuery(accountStudentQuery.value)
+  if (resolved) {
+    upsertAccountForm.student_id = String(resolved.id)
+    accountStudentQuery.value = resolved.label
+    upsertAccountForm.clearErrors('student_id')
+    return
+  }
+  upsertAccountForm.student_id = ''
+}
+
+watch(
+  () => upsertAccountForm.student_id,
+  () => {
+    if (selectedAccountStudent.value) {
+      accountStudentQuery.value = buildStudentLabel(selectedAccountStudent.value)
+    } else if (!accountStudentQuery.value.trim()) {
+      accountStudentQuery.value = ''
+    }
+  },
+  { immediate: true }
+)
+
+const submitAccount = () => {
+  resolveAccountStudentQuery()
+
+  if (normalizeId(upsertAccountForm.student_id) === null) {
+    upsertAccountForm.setError('student_id', 'Please select a valid student from the list.')
+    return
+  }
+
+  upsertAccountForm
+    .transform((data) => ({
+      student_id: normalizeId(data.student_id),
+      fee_structure_id: normalizeId(data.fee_structure_id),
+      opening_balance: toNumber(data.opening_balance),
+      sponsor_org_name: data.sponsor_org_name || null,
+      sponsor_org_id: data.sponsor_org_id || null,
+      notes: data.notes || null,
+    }))
+    .post(endpoints.accountUpsert, {
+      preserveScroll: true,
+      preserveState: true,
+      onSuccess: () => {
+        upsertAccountForm.reset('opening_balance', 'expected_amount', 'notes')
+        reloadFinanceSlices()
+      },
+      onError: (errors) => {
+        console.error('Account save validation failed:', errors)
+      },
+    })
+}
+
+/* ── Payment form ─────────────────────────────────────────────────── */
+
 const paymentForm = useForm({
   student_id: '',
   amount: '',
@@ -292,6 +373,11 @@ const paymentForm = useForm({
   notes: '',
   priority_vote_head_ids: [],
 })
+
+const paymentStudentQuery = ref('')
+
+// FIX Gap 5 UI: only send manual priority when user explicitly reordered
+const priorityTouched = ref(false)
 
 const priorityVoteHeads = ref(
   voteHeadRows.value
@@ -305,10 +391,16 @@ const priorityVoteHeads = ref(
 )
 
 const syncPriorityPayload = () => {
-  paymentForm.priority_vote_head_ids = priorityVoteHeads.value
-    .map((vh) => normalizeId(vh.id))
-    .filter((id) => id !== null)
+  if (priorityTouched.value) {
+    paymentForm.priority_vote_head_ids = priorityVoteHeads.value
+      .map((vh) => normalizeId(vh.id))
+      .filter((id) => id !== null)
+  } else {
+    // Empty array → backend uses profile/structure cascade
+    paymentForm.priority_vote_head_ids = []
+  }
 }
+
 syncPriorityPayload()
 
 watch(voteHeadRows, (rows) => {
@@ -320,6 +412,7 @@ watch(voteHeadRows, (rows) => {
       raw: vh,
     }))
     .filter((vh) => vh.id !== null)
+
   syncPriorityPayload()
 })
 
@@ -328,6 +421,7 @@ const moveVoteHeadUp = (index) => {
   const arr = [...priorityVoteHeads.value]
   ;[arr[index - 1], arr[index]] = [arr[index], arr[index - 1]]
   priorityVoteHeads.value = arr
+  priorityTouched.value = true
   syncPriorityPayload()
 }
 
@@ -336,6 +430,7 @@ const moveVoteHeadDown = (index) => {
   const arr = [...priorityVoteHeads.value]
   ;[arr[index], arr[index + 1]] = [arr[index + 1], arr[index]]
   priorityVoteHeads.value = arr
+  priorityTouched.value = true
   syncPriorityPayload()
 }
 
@@ -348,8 +443,127 @@ const resetVoteHeadPriority = () => {
       raw: vh,
     }))
     .filter((vh) => vh.id !== null)
+
+  priorityTouched.value = false
   syncPriorityPayload()
 }
+
+const selectedPaymentStudent = computed(() => {
+  const id = normalizeId(paymentForm.student_id)
+  if (id === null) return null
+  return studentsRows.value.find((s) => getStudentId(s) === id) ?? null
+})
+
+const selectedPaymentAccount = computed(() => {
+  const sid = normalizeId(paymentForm.student_id)
+  if (sid === null) return null
+  return accountsRows.value.find((a) => normalizeId(a.student_id) === sid) ?? null
+})
+
+const selectedPaymentAccountId = computed(() =>
+  normalizeId(selectedPaymentAccount.value?.id ?? null)
+)
+
+const paymentOverpayPreview = computed(() => {
+  const amount = Math.max(toNumber(paymentForm.amount), 0)
+  if (amount <= 0) return 0
+  const currentBalance = Math.max(toNumber(selectedPaymentAccount.value?.balance), 0)
+  return Math.max(amount - currentBalance, 0)
+})
+
+const onPaymentStudentInput = () => {
+  if (paymentStudentQuery.value !== (selectedPaymentStudent.value ? buildStudentLabel(selectedPaymentStudent.value) : '')) {
+    paymentForm.student_id = ''
+  }
+}
+
+const resolvePaymentStudentQuery = () => {
+  const resolved = resolveStudentByQuery(paymentStudentQuery.value)
+  if (resolved) {
+    paymentForm.student_id = String(resolved.id)
+    paymentStudentQuery.value = resolved.label
+    paymentForm.clearErrors('student_id')
+    return
+  }
+  paymentForm.student_id = ''
+}
+
+watch(
+  () => paymentForm.student_id,
+  () => {
+    if (selectedPaymentStudent.value) {
+      paymentStudentQuery.value = buildStudentLabel(selectedPaymentStudent.value)
+    } else if (!paymentStudentQuery.value.trim()) {
+      paymentStudentQuery.value = ''
+    }
+  },
+  { immediate: true }
+)
+
+const submitPayment = () => {
+  resolvePaymentStudentQuery()
+
+  const sid = normalizeId(paymentForm.student_id)
+  if (sid === null) {
+    paymentForm.setError('student_id', 'Please select a valid student from the list.')
+    return
+  }
+
+  const accountId = selectedPaymentAccountId.value
+  if (accountId === null) {
+    paymentForm.setError('student_id', 'No fee account found for this student. Create/update account first.')
+    return
+  }
+
+  syncPriorityPayload()
+
+  const payload = {
+    student_fee_account_id: accountId,
+    amount: toNumber(paymentForm.amount),
+    method: paymentForm.payment_method,
+    paid_at: paymentForm.paid_at,
+    notes: paymentForm.notes || null,
+
+    student_id: sid,
+    payment_method: paymentForm.payment_method,
+    organization_name: paymentForm.organization_name || null,
+    organization_id: paymentForm.organization_id || null,
+    priority_vote_head_ids: paymentForm.priority_vote_head_ids,
+  }
+
+  paymentForm
+    .transform(() => payload)
+    .post(endpoints.paymentStore, {
+      preserveScroll: true,
+      preserveState: true,
+      onSuccess: () => {
+        paymentForm.reset('amount', 'organization_name', 'organization_id', 'notes')
+        priorityTouched.value = false
+        reloadFinanceSlices()
+      },
+      onError: (errors) => {
+        console.error('Payment validation failed:', errors)
+      },
+    })
+}
+
+/* ── Payment reversal (replaces hard delete) ──────────────────────── */
+
+const reversePayment = (paymentId) => {
+  const reason = window.prompt('Reason for reversal (optional):')
+  if (reason === null) return
+
+  router.delete(endpoints.paymentDestroy(paymentId), {
+    data: { reason: reason || 'User requested reversal' },
+    preserveScroll: true,
+    preserveState: true,
+    onSuccess: () => {
+      reloadFinanceSlices()
+    },
+  })
+}
+
+/* ── Votehead report ──────────────────────────────────────────────── */
 
 const reportLoading = ref(false)
 const reportFilters = ref({
@@ -403,164 +617,22 @@ const fetchVoteheadReport = async () => {
   }
 }
 
-const printVoteheadReport = () => {
-  window.print()
-}
+const printVoteheadReport = () => window.print()
 
-const accountStudentQuery = ref('')
-const paymentStudentQuery = ref('')
+/* ── Summary ──────────────────────────────────────────────────────── */
 
-const selectedAccountStudent = computed(() => {
-  const id = normalizeId(upsertAccountForm.student_id)
-  if (id === null) return null
-  return studentsRows.value.find((s) => getStudentId(s) === id) ?? null
-})
+const summaryDisplay = computed(() => ({
+  students_count: props.summary?.students_count ?? studentsRows.value.length,
+  accounts_count: accountsRows.value.length,
+  total_billed: accountsRows.value.reduce((sum, row) => sum + toNumber(row.expected_amount), 0),
+  total_paid: accountsRows.value.reduce((sum, row) => sum + toNumber(row.total_paid), 0),
+  total_balance: accountsRows.value.reduce((sum, row) => sum + toNumber(row.balance), 0),
+  total_credit: accountsRows.value.reduce((sum, row) => sum + toNumber(row.credit_balance), 0),
+}))
 
-const selectedPaymentStudent = computed(() => {
-  const id = normalizeId(paymentForm.student_id)
-  if (id === null) return null
-  return studentsRows.value.find((s) => getStudentId(s) === id) ?? null
-})
-
-const selectedPaymentAccount = computed(() => {
-  const sid = normalizeId(paymentForm.student_id)
-  if (sid === null) return null
-  return accountsRows.value.find((a) => normalizeId(a.student_id) === sid) ?? null
-})
-
-const selectedPaymentAccountId = computed(() => {
-  const acc = selectedPaymentAccount.value
-  if (!acc) return null
-  return normalizeId(acc.id ?? acc.student_fee_account_id ?? null)
-})
-
-const paymentOverpayPreview = computed(() => {
-  const amount = Math.max(toNumber(paymentForm.amount), 0)
-  if (amount <= 0) return 0
-  const currentBalance = Math.max(toNumber(selectedPaymentAccount.value?.balance), 0)
-  return Math.max(amount - currentBalance, 0)
-})
-
-const resolveStudentByQuery = (query) => {
-  const q = String(query || '').trim().toLowerCase()
-  if (!q) return null
-
-  const exact = studentPickerOptions.value.find((opt) => opt.label.toLowerCase() === q)
-  if (exact) return exact
-
-  const matches = studentPickerOptions.value.filter(
-    (opt) =>
-      opt.name.includes(q) ||
-      opt.admission.includes(q) ||
-      String(opt.id).toLowerCase().includes(q)
-  )
-
-  return matches.length === 1 ? matches[0] : null
-}
-
-const onAccountStudentInput = () => {
-  if (accountStudentQuery.value !== (selectedAccountStudent.value ? buildStudentLabel(selectedAccountStudent.value) : '')) {
-    upsertAccountForm.student_id = ''
-  }
-}
-
-const onPaymentStudentInput = () => {
-  if (paymentStudentQuery.value !== (selectedPaymentStudent.value ? buildStudentLabel(selectedPaymentStudent.value) : '')) {
-    paymentForm.student_id = ''
-  }
-}
-
-const resolveAccountStudentQuery = () => {
-  const resolved = resolveStudentByQuery(accountStudentQuery.value)
-  if (resolved) {
-    upsertAccountForm.student_id = String(resolved.id)
-    accountStudentQuery.value = resolved.label
-    upsertAccountForm.clearErrors('student_id')
-    return
-  }
-  upsertAccountForm.student_id = ''
-}
-
-const resolvePaymentStudentQuery = () => {
-  const resolved = resolveStudentByQuery(paymentStudentQuery.value)
-  if (resolved) {
-    paymentForm.student_id = String(resolved.id)
-    paymentStudentQuery.value = resolved.label
-    paymentForm.clearErrors('student_id')
-    return
-  }
-  paymentForm.student_id = ''
-}
-
-watch(
-  () => upsertAccountForm.student_id,
-  () => {
-    if (selectedAccountStudent.value) {
-      accountStudentQuery.value = buildStudentLabel(selectedAccountStudent.value)
-    } else if (!accountStudentQuery.value.trim()) {
-      accountStudentQuery.value = ''
-    }
-  },
-  { immediate: true }
-)
-
-watch(
-  () => paymentForm.student_id,
-  () => {
-    if (selectedPaymentStudent.value) {
-      paymentStudentQuery.value = buildStudentLabel(selectedPaymentStudent.value)
-    } else if (!paymentStudentQuery.value.trim()) {
-      paymentStudentQuery.value = ''
-    }
-  },
-  { immediate: true }
-)
-
-const selectedFeeStructure = computed(() => {
-  const id = normalizeId(upsertAccountForm.fee_structure_id)
-  if (id === null) return null
-  return feeStructureRows.value.find((f) => getStructureId(f) === id) ?? null
-})
-
-watch(
-  () => selectedFeeStructure.value,
-  (structure) => {
-    if (!structure) return
-    if (upsertAccountForm.expected_amount) return
-    const amount = getStructureAmount(structure)
-    if (amount !== null && amount !== undefined && amount !== '') {
-      upsertAccountForm.expected_amount = String(amount)
-    }
-  }
-)
-
-const summaryDisplay = computed(() => {
-  const totalBilled = accountsRows.value.reduce((sum, row) => sum + toNumber(row.expected_amount), 0)
-  const totalPaid = accountsRows.value.reduce((sum, row) => sum + toNumber(row.total_paid), 0)
-  const totalBalance = accountsRows.value.reduce((sum, row) => sum + toNumber(row.balance), 0)
-  const totalCredit = accountsRows.value.reduce((sum, row) => sum + toNumber(row.credit_balance), 0)
-
-  return {
-    students_count: props.summary?.students_count ?? studentsRows.value.length,
-    accounts_count: accountsRows.value.length,
-    total_billed: totalBilled,
-    total_paid: totalPaid,
-    total_balance: totalBalance,
-    total_credit: totalCredit,
-  }
-})
+/* ── Navigation / Refresh ─────────────────────────────────────────── */
 
 const reloadFinanceSlices = () => {
-  router.reload({
-    only: ['accounts', 'payments', 'recentPayments', 'summary', 'students', 'voteHeads', 'feeProfiles'],
-    preserveScroll: true,
-    preserveState: true,
-    onStart: () => (isRefreshing.value = true),
-    onFinish: () => (isRefreshing.value = false),
-  })
-}
-
-const refreshFinanceData = () => {
   router.get(
     endpoints.index,
     {
@@ -573,103 +645,14 @@ const refreshFinanceData = () => {
       replace: true,
       onStart: () => (isRefreshing.value = true),
       onFinish: () => (isRefreshing.value = false),
+      onSuccess: () => fetchVoteheadReport(),
     }
   )
 }
 
-const submitAccount = () => {
-  resolveAccountStudentQuery()
-  if (normalizeId(upsertAccountForm.student_id) === null) {
-    upsertAccountForm.setError('student_id', 'Please select a valid student from the list.')
-    return
-  }
+const refreshFinanceData = () => reloadFinanceSlices()
 
-  const expected = toNumber(upsertAccountForm.expected_amount || getStructureAmount(selectedFeeStructure.value) || 0)
-  const opening = toNumber(upsertAccountForm.opening_balance)
-  const totalFeeDue = expected + opening
-
-  upsertAccountForm
-    .transform((data) => ({
-      student_id: normalizeId(data.student_id),
-      fee_structure_id: normalizeId(data.fee_structure_id),
-      total_fee_due: totalFeeDue,
-      sponsor_org_name: data.sponsor_org_name || null,
-      sponsor_org_id: data.sponsor_org_id || null,
-      notes: data.notes || null,
-    }))
-    .post(endpoints.accountUpsert, {
-      preserveScroll: true,
-      preserveState: true,
-      onSuccess: () => {
-        upsertAccountForm.reset('opening_balance', 'expected_amount', 'notes')
-        reloadFinanceSlices()
-      },
-      onError: (errors) => {
-        console.error('Account save validation failed:', errors)
-      },
-    })
-}
-
-const submitPayment = () => {
-  resolvePaymentStudentQuery()
-
-  const sid = normalizeId(paymentForm.student_id)
-  if (sid === null) {
-    paymentForm.setError('student_id', 'Please select a valid student from the list.')
-    return
-  }
-
-  const accountId = selectedPaymentAccountId.value
-  if (accountId === null) {
-    paymentForm.setError('student_id', 'No fee account found for this student. Create/update account first.')
-    return
-  }
-
-  syncPriorityPayload()
-
-  const referenceValue = paymentForm.organization_id || paymentForm.organization_name || null
-
-  const payload = {
-    student_fee_account_id: accountId,
-    amount: toNumber(paymentForm.amount),
-    method: paymentForm.payment_method,
-    reference: referenceValue,
-    paid_at: paymentForm.paid_at,
-    notes: paymentForm.notes || null,
-
-    student_id: sid,
-    payment_method: paymentForm.payment_method,
-    organization_name: paymentForm.organization_name || null,
-    organization_id: paymentForm.organization_id || null,
-    priority_vote_head_ids: paymentForm.priority_vote_head_ids,
-  }
-
-  paymentForm
-    .transform(() => payload)
-    .post(endpoints.paymentStore, {
-      preserveScroll: true,
-      preserveState: true,
-      onSuccess: () => {
-        paymentForm.reset('amount', 'organization_name', 'organization_id', 'notes')
-        reloadFinanceSlices()
-      },
-      onError: (errors) => {
-        console.error('Payment validation failed:', errors)
-      },
-    })
-}
-
-const deletePayment = (paymentId) => {
-  if (!window.confirm('Delete this payment record?')) return
-
-  router.delete(endpoints.paymentDestroy(paymentId), {
-    preserveScroll: true,
-    preserveState: true,
-    onSuccess: () => {
-      reloadFinanceSlices()
-    },
-  })
-}
+/* ── Print ────────────────────────────────────────────────────────── */
 
 const printMode = ref('')
 const printClassLevel = ref('')
@@ -728,9 +711,10 @@ const printStudentPayments = computed(() => {
   if (printMode.value !== 'student') return []
   const sid = normalizeId(printStudentId.value)
   if (sid === null) return []
+
   return paymentsRows.value
-    .filter((p) => normalizeId(p.student_id) === sid)
-    .sort((a, b) => String(a.paid_at ?? a.created_at ?? '').localeCompare(String(b.paid_at ?? b.created_at ?? '')))
+    .filter((p) => normalizeId(p.student_id) === sid && (p.status ?? 'active') === 'active')
+    .sort((a, b) => String(a.paid_at ?? '').localeCompare(String(b.paid_at ?? '')))
 })
 
 const printTotals = computed(() => {
@@ -757,9 +741,7 @@ const resetPrintMode = () => {
   printMode.value = ''
 }
 
-const handleAfterPrint = () => {
-  resetPrintMode()
-}
+const handleAfterPrint = () => resetPrintMode()
 
 onMounted(() => {
   fetchVoteheadReport()
@@ -802,6 +784,8 @@ const printSingleStudentStatement = () => {
   <div class="min-h-screen bg-slate-950 text-slate-100">
     <main class="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <div class="no-print">
+
+        <!-- Header -->
         <section class="mb-8 flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 class="text-2xl font-bold tracking-tight text-white">Student Finance</h1>
@@ -819,23 +803,40 @@ const printSingleStudentStatement = () => {
           </button>
         </section>
 
-        <!-- Print tools -->
+        <!-- Print controls -->
         <section class="mb-8 rounded-xl border border-white/10 bg-slate-900/70 p-5">
           <h2 class="text-lg font-semibold text-white">Print Student Fee Accounts</h2>
-          <p class="mt-1 text-sm text-slate-300">Print all accounts, accounts by class, or a single student fee statement with payments.</p>
+          <p class="mt-1 text-sm text-slate-300">
+            Print all accounts, accounts by class, or a single student fee statement with payments.
+          </p>
           <div class="mt-4 grid gap-3 md:grid-cols-3">
-            <button type="button" class="rounded-md bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-400" @click="printAllAccounts">
+            <button
+              type="button"
+              class="rounded-md bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-400"
+              @click="printAllAccounts"
+            >
               Print All Accounts
             </button>
+
             <div class="flex gap-2">
-              <select v-model="printClassLevel" class="flex-1 rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400">
+              <select
+                v-model="printClassLevel"
+                class="flex-1 rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
+              >
                 <option value="">Select class...</option>
-                <option v-for="level in classLevels" :key="`print-level-${level}`" :value="level">{{ level }}</option>
+                <option v-for="level in classLevels" :key="`print-level-${level}`" :value="level">
+                  {{ level }}
+                </option>
               </select>
-              <button type="button" class="rounded-md border border-white/20 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-white/5" @click="printClassAccounts">
+              <button
+                type="button"
+                class="rounded-md border border-white/20 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-white/5"
+                @click="printClassAccounts"
+              >
                 Print Class
               </button>
             </div>
+
             <div class="flex gap-2">
               <input
                 v-model="printStudentQuery"
@@ -850,7 +851,11 @@ const printSingleStudentStatement = () => {
               <datalist id="print-students-list">
                 <option v-for="opt in studentPickerOptions" :key="`print-opt-${opt.id}`" :value="opt.label" />
               </datalist>
-              <button type="button" class="rounded-md border border-white/20 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-white/5" @click="printSingleStudentStatement">
+              <button
+                type="button"
+                class="rounded-md border border-white/20 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-white/5"
+                @click="printSingleStudentStatement"
+              >
                 Print Student
               </button>
             </div>
@@ -861,41 +866,80 @@ const printSingleStudentStatement = () => {
         <section class="mb-8 rounded-xl border border-white/10 bg-slate-900/70 p-5">
           <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
             <h2 class="text-lg font-semibold text-white">Votehead Collections Report</h2>
-            <div class="text-xs text-slate-400">Filter by period, votehead, and profile (Day Scholar / Boarder)</div>
+            <div class="text-xs text-slate-400">
+              Filter by period, votehead, and profile (Day Scholar / Boarder)
+            </div>
           </div>
+
           <form class="grid gap-3 md:grid-cols-6" @submit.prevent="fetchVoteheadReport">
-            <select v-model="reportFilters.period" class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400">
+            <select
+              v-model="reportFilters.period"
+              class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
+            >
               <option value="day">Day</option>
               <option value="week">Week</option>
               <option value="month">Month</option>
               <option value="custom">Custom</option>
             </select>
-            <select v-model="reportFilters.vote_head_id" class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400">
+
+            <select
+              v-model="reportFilters.vote_head_id"
+              class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
+            >
               <option value="">All Voteheads</option>
               <option v-for="vh in voteHeadRows" :key="`report-vh-${vh.id}`" :value="String(vh.id)">
                 {{ vh.code ? `${vh.code} - ` : '' }}{{ vh.name }}
               </option>
             </select>
-            <select v-model="reportFilters.fee_profile_id" class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400">
+
+            <select
+              v-model="reportFilters.fee_profile_id"
+              class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
+            >
               <option value="">All Profiles</option>
               <option v-for="fp in feeProfileRows" :key="`report-fp-${fp.id}`" :value="String(fp.id)">
                 {{ fp.code ? `${fp.code} - ` : '' }}{{ fp.name }}
               </option>
             </select>
-            <input v-model="reportFilters.from" type="date" class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400" :disabled="reportFilters.period !== 'custom'" />
-            <input v-model="reportFilters.to" type="date" class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400" :disabled="reportFilters.period !== 'custom'" />
+
+            <input
+              v-model="reportFilters.from"
+              type="date"
+              class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
+              :disabled="reportFilters.period !== 'custom'"
+            />
+
+            <input
+              v-model="reportFilters.to"
+              type="date"
+              class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
+              :disabled="reportFilters.period !== 'custom'"
+            />
+
             <div class="flex items-center gap-2">
-              <button type="submit" :disabled="reportLoading" class="rounded-md bg-cyan-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:opacity-50">
+              <button
+                type="submit"
+                :disabled="reportLoading"
+                class="rounded-md bg-cyan-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-400 disabled:opacity-50"
+              >
                 {{ reportLoading ? 'Generating...' : 'Generate' }}
               </button>
-              <button type="button" class="rounded-md border border-white/20 px-3 py-2 text-sm font-medium text-slate-200 hover:bg-white/5" @click="printVoteheadReport">Print</button>
+              <button
+                type="button"
+                class="rounded-md border border-white/20 px-3 py-2 text-sm font-medium text-slate-200 hover:bg-white/5"
+                @click="printVoteheadReport"
+              >
+                Print
+              </button>
             </div>
           </form>
+
           <div class="mt-4 text-sm text-slate-300">
             <span class="mr-4">From: <strong>{{ voteheadReport.from || '-' }}</strong></span>
             <span class="mr-4">To: <strong>{{ voteheadReport.to || '-' }}</strong></span>
             <span>Grand Total: <strong class="text-emerald-300">{{ formatKES(voteheadReport.grand_total || 0) }}</strong></span>
           </div>
+
           <div class="mt-4 overflow-x-auto">
             <table class="min-w-full divide-y divide-white/10 text-sm">
               <thead class="bg-slate-950/50 text-left text-slate-300">
@@ -919,11 +963,17 @@ const printSingleStudentStatement = () => {
           </div>
         </section>
 
+        <!-- Flash -->
         <section v-if="flash.success || flash.error" class="mb-6 space-y-2">
-          <div v-if="flash.success" class="rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">{{ flash.success }}</div>
-          <div v-if="flash.error" class="rounded-lg border border-rose-400/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{{ flash.error }}</div>
+          <div v-if="flash.success" class="rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+            {{ flash.success }}
+          </div>
+          <div v-if="flash.error" class="rounded-lg border border-rose-400/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+            {{ flash.error }}
+          </div>
         </section>
 
+        <!-- Summary -->
         <section class="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
           <article class="rounded-xl border border-white/10 bg-slate-900/70 p-4">
             <p class="text-xs uppercase tracking-wider text-slate-400">Students</p>
@@ -951,10 +1001,307 @@ const printSingleStudentStatement = () => {
           </article>
         </section>
 
-        <!-- Account + payment forms and tables kept as your current layout -->
-        <!-- (same block already included in your file and preserved above) -->
+        <!-- Forms -->
+        <section class="mb-8 grid gap-6 lg:grid-cols-2">
+          <!-- Account form -->
+          <article class="rounded-xl border border-white/10 bg-slate-900/70 p-5">
+            <h2 class="text-lg font-semibold text-white">Create / Update Student Fee Account</h2>
+            <form class="mt-4 space-y-3" @submit.prevent="submitAccount">
+              <div>
+                <label class="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-400">Student</label>
+                <input
+                  v-model="accountStudentQuery"
+                  list="account-students-list"
+                  type="text"
+                  class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400"
+                  placeholder="Type student name or admission number..."
+                  required
+                  @input="onAccountStudentInput"
+                  @change="resolveAccountStudentQuery"
+                  @blur="resolveAccountStudentQuery"
+                />
+                <datalist id="account-students-list">
+                  <option v-for="opt in studentPickerOptions" :key="`acc-opt-${opt.id}`" :value="opt.label" />
+                </datalist>
+                <p v-if="upsertAccountForm.errors.student_id" class="mt-1 text-xs text-rose-300">{{ upsertAccountForm.errors.student_id }}</p>
+              </div>
 
-        <!-- Recent payments -->
+              <div>
+                <label class="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-400">Fee Structure</label>
+                <select
+                  v-model="upsertAccountForm.fee_structure_id"
+                  class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400"
+                >
+                  <option value="">Select available structure...</option>
+                  <option
+                    v-for="structure in feeStructureRows"
+                    :key="getStructureId(structure)"
+                    :value="getStructureId(structure) ?? ''"
+                  >
+                    {{ getStructureName(structure) || `Structure #${getStructureId(structure) ?? 'N/A'}` }}
+                  </option>
+                </select>
+              </div>
+
+              <div class="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label class="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-400">Opening Balance</label>
+                  <input
+                    v-model="upsertAccountForm.opening_balance"
+                    type="number"
+                    step="0.01"
+                    class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400"
+                    placeholder="0.00"
+                  />
+                  <p class="mt-1 text-[11px] text-slate-400">Negative = credit carried forward from previous year</p>
+                </div>
+
+                <div>
+                  <label class="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-400">Expected Amount (auto-filled)</label>
+                  <input
+                    v-model="upsertAccountForm.expected_amount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400"
+                    placeholder="0.00"
+                    readonly
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                :disabled="upsertAccountForm.processing || isRefreshing"
+                class="inline-flex items-center rounded-md bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {{ upsertAccountForm.processing ? 'Saving...' : 'Save Account' }}
+              </button>
+            </form>
+          </article>
+
+          <!-- Payment form -->
+          <article class="rounded-xl border border-white/10 bg-slate-900/70 p-5">
+            <h2 class="text-lg font-semibold text-white">Record Fee Payment</h2>
+            <form class="mt-4 space-y-3" @submit.prevent="submitPayment">
+              <div>
+                <label class="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-400">Student</label>
+                <input
+                  v-model="paymentStudentQuery"
+                  list="payment-students-list"
+                  type="text"
+                  class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
+                  placeholder="Type student name or admission number..."
+                  required
+                  @input="onPaymentStudentInput"
+                  @change="resolvePaymentStudentQuery"
+                  @blur="resolvePaymentStudentQuery"
+                />
+                <datalist id="payment-students-list">
+                  <option v-for="opt in studentPickerOptions" :key="`pay-opt-${opt.id}`" :value="opt.label" />
+                </datalist>
+                <p v-if="paymentForm.errors.student_id" class="mt-1 text-xs text-rose-300">{{ paymentForm.errors.student_id }}</p>
+              </div>
+
+              <div v-if="selectedPaymentAccount" class="rounded-md border border-white/10 bg-slate-950/60 px-3 py-2 text-xs text-slate-300">
+                Current balance: <span class="font-semibold text-amber-300">{{ formatKES(selectedPaymentAccount.balance) }}</span>
+                <span class="mx-2 text-slate-500">|</span>
+                Current credit: <span class="font-semibold text-fuchsia-300">{{ formatKES(selectedPaymentAccount.credit_balance) }}</span>
+              </div>
+
+              <div class="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label class="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-400">Amount</label>
+                  <input
+                    v-model="paymentForm.amount"
+                    type="number"
+                    min="1"
+                    step="0.01"
+                    required
+                    class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
+                    placeholder="0.00"
+                  />
+                  <p v-if="paymentOverpayPreview > 0" class="mt-1 text-xs text-fuchsia-300">
+                    Overpayment preview: {{ formatKES(paymentOverpayPreview) }} will be recorded as credit.
+                  </p>
+                </div>
+
+                <div>
+                  <label class="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-400">Payment Method</label>
+                  <select
+                    v-model="paymentForm.payment_method"
+                    class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
+                  >
+                    <option v-for="method in paymentMethods" :key="method" :value="method">
+                      {{ method }}
+                    </option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label class="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-400">Organization Name</label>
+                  <input
+                    v-model="paymentForm.organization_name"
+                    type="text"
+                    class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
+                  />
+                </div>
+                <div>
+                  <label class="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-400">Organization ID / Ref</label>
+                  <input
+                    v-model="paymentForm.organization_id"
+                    type="text"
+                    class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label class="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-400">Paid At</label>
+                <input
+                  v-model="paymentForm.paid_at"
+                  type="date"
+                  class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
+                />
+              </div>
+
+              <!-- Priority with dirty flag -->
+              <div class="rounded-md border border-white/15 bg-slate-950/70 p-3">
+                <div class="mb-2 flex items-center justify-between">
+                  <h4 class="text-sm font-semibold text-slate-200">
+                    Votehead Priority
+                    <span v-if="priorityTouched" class="text-xs text-cyan-400">(Manual — custom order active)</span>
+                    <span v-else class="text-xs text-slate-500">(Auto — profile/structure order)</span>
+                  </h4>
+                  <button
+                    type="button"
+                    class="rounded border border-white/20 px-2 py-1 text-xs text-slate-300 hover:bg-white/10"
+                    @click="resetVoteHeadPriority"
+                  >
+                    Reset
+                  </button>
+                </div>
+
+                <p class="mb-2 text-xs text-slate-400">
+                  Reorder to override automatic priority. Top votehead receives allocation first.
+                </p>
+
+                <ul v-if="priorityVoteHeads.length" class="space-y-2">
+                  <li
+                    v-for="(vh, idx) in priorityVoteHeads"
+                    :key="`vh-priority-${vh.id}`"
+                    class="flex items-center justify-between rounded border border-white/10 bg-slate-900 px-3 py-2"
+                  >
+                    <div class="flex items-center gap-2">
+                      <span class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-white/20 text-xs text-slate-200">
+                        {{ idx + 1 }}
+                      </span>
+                      <div>
+                        <div class="text-sm font-medium text-slate-100">{{ vh.name }}</div>
+                        <div v-if="vh.code" class="text-xs text-slate-400">{{ vh.code }}</div>
+                      </div>
+                    </div>
+
+                    <div class="flex gap-1">
+                      <button
+                        type="button"
+                        class="rounded border border-white/20 px-2 py-1 text-xs text-slate-200 hover:bg-white/10 disabled:opacity-40"
+                        :disabled="idx === 0"
+                        @click="moveVoteHeadUp(idx)"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        class="rounded border border-white/20 px-2 py-1 text-xs text-slate-200 hover:bg-white/10 disabled:opacity-40"
+                        :disabled="idx === priorityVoteHeads.length - 1"
+                        @click="moveVoteHeadDown(idx)"
+                      >
+                        ↓
+                      </button>
+                    </div>
+                  </li>
+                </ul>
+              </div>
+
+              <div class="flex items-center justify-end gap-2 border-t border-white/10 pt-4">
+                <button
+                  type="button"
+                  class="rounded-md border border-white/20 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-white/5"
+                  @click="paymentForm.reset('amount', 'organization_name', 'organization_id', 'notes')"
+                >
+                  Reset
+                </button>
+                <button
+                  type="submit"
+                  :disabled="paymentForm.processing || isRefreshing"
+                  class="inline-flex items-center rounded-md bg-cyan-500 px-5 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {{ paymentForm.processing ? 'Saving Payment...' : 'Record Payment' }}
+                </button>
+              </div>
+            </form>
+          </article>
+        </section>
+
+        <!-- Accounts -->
+        <section class="mb-8 rounded-xl border border-white/10 bg-slate-900/70 p-5">
+          <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-lg font-semibold text-white">Student Fee Accounts</h2>
+            <div class="flex flex-wrap gap-2">
+              <input
+                v-model="search"
+                type="text"
+                placeholder="Search name or admission no..."
+                class="rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400"
+              />
+              <select
+                v-model="classFilter"
+                class="rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400"
+              >
+                <option value="">All classes</option>
+                <option v-for="level in classLevels" :key="level" :value="level">{{ level }}</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-white/10 text-sm">
+              <thead class="bg-slate-950/50 text-left text-slate-300">
+                <tr>
+                  <th class="px-3 py-2">Admission No</th>
+                  <th class="px-3 py-2">Student</th>
+                  <th class="px-3 py-2">Class</th>
+                  <th class="px-3 py-2">Expected</th>
+                  <th class="px-3 py-2">Paid</th>
+                  <th class="px-3 py-2">Balance</th>
+                  <th class="px-3 py-2">Credit</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-white/5">
+                <tr v-for="account in filteredAccounts" :key="account.id">
+                  <td class="px-3 py-2 text-slate-200">{{ account.admission_no || '—' }}</td>
+                  <td class="px-3 py-2 text-white">{{ account.student_name || '—' }}</td>
+                  <td class="px-3 py-2 text-slate-300">
+                    {{ account.class_level || '—' }}
+                    <span v-if="account.stream"> - {{ account.stream }}</span>
+                  </td>
+                  <td class="px-3 py-2 text-cyan-300">{{ formatKES(account.expected_amount) }}</td>
+                  <td class="px-3 py-2 text-emerald-300">{{ formatKES(account.total_paid) }}</td>
+                  <td class="px-3 py-2 text-amber-300">{{ formatKES(account.balance) }}</td>
+                  <td class="px-3 py-2 text-fuchsia-300">{{ formatKES(account.credit_balance) }}</td>
+                </tr>
+                <tr v-if="!filteredAccounts.length">
+                  <td colspan="7" class="px-3 py-6 text-center text-slate-400">No student accounts found.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Payments -->
         <section class="rounded-xl border border-white/10 bg-slate-900/70 p-5">
           <h2 class="mb-4 text-lg font-semibold text-white">Recent Payments</h2>
           <div class="overflow-x-auto">
@@ -966,29 +1313,64 @@ const printSingleStudentStatement = () => {
                   <th class="px-3 py-2">Method</th>
                   <th class="px-3 py-2">Reference/Org</th>
                   <th class="px-3 py-2">Amount</th>
+                  <th class="px-3 py-2">Status</th>
                   <th class="px-3 py-2">Actions</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-white/5">
-                <tr v-for="payment in paymentsRows" :key="payment.id ?? payment.receipt_no ?? payment.created_at">
+                <tr
+                  v-for="payment in paymentsRows"
+                  :key="payment.id"
+                  :class="{ 'opacity-50': payment.status === 'reversed' }"
+                >
                   <td class="px-3 py-2 text-slate-200">{{ payment.paid_at || payment.created_at || '—' }}</td>
                   <td class="px-3 py-2 text-white">{{ payment.student_name || '—' }}</td>
                   <td class="px-3 py-2 text-slate-300">{{ payment.payment_method || payment.method || '—' }}</td>
                   <td class="px-3 py-2 text-slate-300">{{ payment.organization_id || payment.organization_name || payment.receipt_no || '—' }}</td>
-                  <td class="px-3 py-2 font-semibold text-emerald-300">{{ formatKES(payment.amount) }}</td>
+                  <td
+                    class="px-3 py-2 font-semibold"
+                    :class="payment.status === 'reversed' ? 'text-slate-500 line-through' : 'text-emerald-300'"
+                  >
+                    {{ formatKES(payment.amount) }}
+                  </td>
+                  <td class="px-3 py-2">
+                    <span
+                      v-if="payment.status === 'reversed'"
+                      class="rounded border border-rose-400/40 bg-rose-500/10 px-2 py-0.5 text-xs font-medium text-rose-300"
+                    >
+                      Reversed
+                    </span>
+                    <span
+                      v-else
+                      class="rounded border border-emerald-400/40 bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-300"
+                    >
+                      Active
+                    </span>
+                  </td>
                   <td class="px-3 py-2">
                     <div class="flex flex-wrap gap-2">
-                      <Link v-if="payment.id" :href="endpoints.receiptPrint(payment.id)" target="_blank" rel="noopener noreferrer" class="rounded border border-cyan-300/40 px-2 py-1 text-xs font-medium text-cyan-200 hover:bg-cyan-400/10">
+                      <Link
+                        v-if="payment.id"
+                        :href="endpoints.receiptPrint(payment.id)"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="rounded border border-cyan-300/40 px-2 py-1 text-xs font-medium text-cyan-200 hover:bg-cyan-400/10"
+                      >
                         Print Receipt
                       </Link>
-                      <button v-if="payment.id" type="button" class="rounded border border-rose-300/40 px-2 py-1 text-xs font-medium text-rose-200 hover:bg-rose-400/10" @click="deletePayment(payment.id)">
-                        Delete
+                      <button
+                        v-if="payment.id && payment.status !== 'reversed'"
+                        type="button"
+                        class="rounded border border-rose-300/40 px-2 py-1 text-xs font-medium text-rose-200 hover:bg-rose-400/10"
+                        @click="reversePayment(payment.id)"
+                      >
+                        Reverse
                       </button>
                     </div>
                   </td>
                 </tr>
                 <tr v-if="!paymentsRows.length">
-                  <td colspan="6" class="px-3 py-6 text-center text-slate-400">No payments recorded yet.</td>
+                  <td colspan="7" class="px-3 py-6 text-center text-slate-400">No payments recorded yet.</td>
                 </tr>
               </tbody>
             </table>
@@ -996,7 +1378,7 @@ const printSingleStudentStatement = () => {
         </section>
       </div>
 
-      <!-- Print view -->
+      <!-- Print section -->
       <section v-if="printMode" class="hidden print:block bg-white text-black">
         <div class="mb-4">
           <h1 class="text-2xl font-bold">{{ printTitle }}</h1>
@@ -1008,7 +1390,6 @@ const printSingleStudentStatement = () => {
           <div><strong>Total Expected:</strong> {{ formatKES(printTotals.expected) }}</div>
           <div><strong>Total Paid:</strong> {{ formatKES(printTotals.paid) }}</div>
           <div><strong>Total Balance:</strong> {{ formatKES(printTotals.balance) }}</div>
-          <div><strong>Total Credit:</strong> {{ formatKES(printTotals.credit) }}</div>
         </div>
 
         <table class="print-table w-full text-sm">
@@ -1052,13 +1433,13 @@ const printSingleStudentStatement = () => {
             </thead>
             <tbody>
               <tr v-for="payment in printStudentPayments" :key="`print-pay-${payment.id}`">
-                <td>{{ payment.paid_at || payment.created_at || '—' }}</td>
-                <td>{{ payment.payment_method || payment.method || '—' }}</td>
+                <td>{{ payment.paid_at || '—' }}</td>
+                <td>{{ payment.payment_method || '—' }}</td>
                 <td>{{ payment.organization_id || payment.organization_name || payment.receipt_no || '—' }}</td>
                 <td>{{ formatKES(payment.amount) }}</td>
               </tr>
               <tr v-if="!printStudentPayments.length">
-                <td colspan="4" style="text-align: center;">No payment history found for this student.</td>
+                <td colspan="4" style="text-align: center;">No payment history found.</td>
               </tr>
             </tbody>
           </table>

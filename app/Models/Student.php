@@ -1,5 +1,4 @@
 <?php
-// app/Models/Student.php
 
 namespace App\Models;
 
@@ -16,63 +15,11 @@ class Student extends Model
     use HasFactory, SoftDeletes, BelongsToSchool;
 
     protected $fillable = [
-        'school_id',
-        'admission_no',
-        'first_name',
-        'last_name',
-        'parent_name',
-        'parent_phone',
-        'guardian_name',
-        'guardian_phone',
-        'guardian_relationship',
-        'contact_preference',
-        'gender',
-        'education_system',
-        'class_level',
-        'pathway',
-        'entry_marks',
-        'form_level',
-        'stream',
-        'status',
-        'fee_profile_id',
+        'school_id', 'fee_profile_id', 'admission_no', 'first_name', 'last_name',
+        'parent_name', 'parent_phone', 'gender', 'class_level', 'stream', 'status', 'form_level'
     ];
 
-    protected $casts = [
-        'form_level' => 'integer',
-        'entry_marks' => 'decimal:2',
-        'fee_profile_id' => 'integer',
-    ];
-
-    protected static function booted(): void
-    {
-        static::creating(function (Student $student) {
-            if (!$student->school_id && app()->bound('currentSchool') && app('currentSchool')) {
-                $student->school_id = (int) app('currentSchool')->id;
-            }
-
-            if ($student->entry_marks === null || $student->entry_marks === '') {
-                $student->entry_marks = 0;
-            }
-
-            if (!$student->status) {
-                $student->status = 'active';
-            }
-
-            if (!$student->contact_preference) {
-                $student->contact_preference = 'parent';
-            }
-        });
-    }
-
-    public function examResults(): HasMany
-    {
-        return $this->hasMany(ExamResult::class);
-    }
-
-    public function parentMessages(): HasMany
-    {
-        return $this->hasMany(ParentMessage::class);
-    }
+    protected $appends = ['full_name'];
 
     public function feeAccount(): HasOne
     {
@@ -89,8 +36,11 @@ class Student extends Model
         return $this->belongsTo(FeeProfile::class, 'fee_profile_id');
     }
 
+    /**
+     * Accessor for full name - required by the statement template.
+     */
     public function getFullNameAttribute(): string
     {
-        return trim($this->first_name . ' ' . $this->last_name);
+        return trim("{$this->first_name} {$this->last_name}");
     }
 }

@@ -7,7 +7,8 @@ const props = defineProps({
   structures: { type: [Object, Array], default: () => ({ data: [] }) },
   voteHeads: { type: Array, default: () => [] },
   categories: { type: Array, default: () => [] },
-  feeProfiles: { type: Array, default: () => [] },
+  // FIX: fee_profile_id removed from structures entirely (schema has no such column).
+  // The feeProfiles prop is intentionally omitted — no profile selector on structures.
 })
 
 const page = usePage()
@@ -25,8 +26,9 @@ const structureRows = computed(() => {
   return []
 })
 
-const voteHeadRows = computed(() => (Array.isArray(props.voteHeads) ? props.voteHeads : []))
-const feeProfileRows = computed(() => (Array.isArray(props.feeProfiles) ? props.feeProfiles : []))
+const voteHeadRows = computed(() =>
+  Array.isArray(props.voteHeads) ? props.voteHeads : []
+)
 
 const defaultCategory = computed(() => {
   if (Array.isArray(props.categories) && props.categories.length) return props.categories[0]
@@ -36,7 +38,6 @@ const defaultCategory = computed(() => {
 const createDefaults = () => ({
   name: '',
   year: new Date().getFullYear(),
-  fee_profile_id: '',
   category: defaultCategory.value,
   class_level: '',
   notes: '',
@@ -66,8 +67,8 @@ const removeLine = (idx) => {
   }))
 }
 
-const voteHeadCode = (id) => voteHeadRows.value.find((v) => Number(v.id) === Number(id))?.code ?? ''
-const profileName = (id) => feeProfileRows.value.find((p) => Number(p.id) === Number(id))?.name ?? '—'
+const voteHeadCode = (id) =>
+  voteHeadRows.value.find((v) => Number(v.id) === Number(id))?.code ?? ''
 
 const fmt = (v) =>
   Number(v || 0).toLocaleString(undefined, {
@@ -76,31 +77,34 @@ const fmt = (v) =>
   })
 
 const lineTermTotal = (line) =>
-  Number(line.term1_amount || 0) + Number(line.term2_amount || 0) + Number(line.term3_amount || 0)
+  Number(line.term1_amount || 0) +
+  Number(line.term2_amount || 0) +
+  Number(line.term3_amount || 0)
 
 const syncLineTotal = (line) => {
   line.total_amount = Number(line.parent_total_amount || lineTermTotal(line) || 0)
 }
 
-const grandCreateTotals = computed(() => {
-  return (createForm.lines || []).reduce(
+const grandCreateTotals = computed(() =>
+  (createForm.lines || []).reduce(
     (acc, r) => {
-      acc.govt += Number(r.govt_capitation_amount || 0)
+      acc.govt   += Number(r.govt_capitation_amount || 0)
       acc.parent += Number(r.parent_total_amount || 0)
-      acc.t1 += Number(r.term1_amount || 0)
-      acc.t2 += Number(r.term2_amount || 0)
-      acc.t3 += Number(r.term3_amount || 0)
+      acc.t1     += Number(r.term1_amount || 0)
+      acc.t2     += Number(r.term2_amount || 0)
+      acc.t3     += Number(r.term3_amount || 0)
       return acc
     },
-    { govt: 0, parent: 0, t1: 0, t2: 0, t3: 0 },
+    { govt: 0, parent: 0, t1: 0, t2: 0, t3: 0 }
   )
-})
+)
 
+// FIX: removed fee_profile_id from client-side validation entirely
 const validateCreate = () => {
   createForm.clearErrors()
 
-  if (!createForm.fee_profile_id) {
-    createForm.setError('fee_profile_id', 'Fee profile is required.')
+  if (!createForm.name?.trim()) {
+    createForm.setError('name', 'Structure name is required.')
     return false
   }
 
@@ -118,9 +122,8 @@ const validateCreate = () => {
     return false
   }
 
-  const missingVotehead = createForm.lines.find((l) => !l.vote_head_id)
-  if (missingVotehead) {
-    createForm.setError('lines', 'Each line must have a votehead.')
+  if (createForm.lines.find((l) => !l.vote_head_id)) {
+    createForm.setError('lines', 'Each line must have a votehead selected.')
     return false
   }
 
@@ -137,22 +140,24 @@ const submitCreate = () => {
     }))
     .sort((a, b) => Number(a.sort_order) - Number(b.sort_order))
     .map((line, idx) => ({
-      vote_head_id: Number(line.vote_head_id),
-      govt_capitation_amount: Number(line.govt_capitation_amount || 0),
-      parent_total_amount: Number(line.parent_total_amount || 0),
-      term1_amount: Number(line.term1_amount || 0),
-      term2_amount: Number(line.term2_amount || 0),
-      term3_amount: Number(line.term3_amount || 0),
-      total_amount: Number(line.parent_total_amount || lineTermTotal(line) || 0),
-      sort_order: idx + 1,
+      vote_head_id:            Number(line.vote_head_id),
+      govt_capitation_amount:  Number(line.govt_capitation_amount || 0),
+      parent_total_amount:     Number(line.parent_total_amount || 0),
+      term1_amount:            Number(line.term1_amount || 0),
+      term2_amount:            Number(line.term2_amount || 0),
+      term3_amount:            Number(line.term3_amount || 0),
+      total_amount:            Number(line.parent_total_amount || lineTermTotal(line) || 0),
+      sort_order:              idx + 1,
     }))
 
   createForm
     .transform((data) => ({
-      ...data,
-      year: Number(data.year),
-      fee_profile_id: Number(data.fee_profile_id),
-      lines: normalizedLines,
+      name:        data.name,
+      year:        Number(data.year),
+      category:    data.category,
+      class_level: data.class_level || null,
+      notes:       data.notes || null,
+      lines:       normalizedLines,
     }))
     .post(endpoints.store, {
       preserveScroll: true,
@@ -164,21 +169,13 @@ const submitCreate = () => {
 }
 
 const deleteStructure = (id) => {
-  if (!confirm('Delete this fee structure?')) return
+  if (!confirm('Delete this fee structure? This cannot be undone.')) return
   router.delete(endpoints.destroy(id), { preserveScroll: true })
 }
 
-const structureGovtTotal = (s) =>
-  Number(s.govt_total ?? s.total_govt ?? s.govt_capitation_total ?? 0)
-
-const structureParentTotal = (s) =>
-  Number(s.parent_total ?? s.total_parent ?? s.parent_amount_total ?? 0)
-
-const structureAccountsCount = (s) =>
-  Number(s.fee_accounts_count ?? s.accounts_count ?? s.students_count ?? 0)
-
-const structureProfileId = (s) =>
-  Number(s.fee_profile_id ?? s.profile_id ?? s.feeProfile?.id ?? 0)
+const structureGovtTotal   = (s) => Number(s.govt_total ?? 0)
+const structureParentTotal = (s) => Number(s.parent_total ?? 0)
+const structureAccountsCount = (s) => Number(s.fee_accounts_count ?? s.accounts_count ?? 0)
 </script>
 
 <template>
@@ -187,13 +184,16 @@ const structureProfileId = (s) =>
   <AdminLayout>
     <main class="min-h-screen bg-slate-950 text-slate-100">
       <div class="mx-auto w-full max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
+
+        <!-- Page heading -->
         <section class="rounded-2xl border border-white/10 bg-slate-900/70 p-6">
           <h1 class="text-2xl font-bold tracking-tight text-white">Fee Structures</h1>
           <p class="mt-1 text-sm text-slate-300">
-            Configure fee profile structures and votehead lines for automatic student ledger creation.
+            Configure fee structures and votehead lines for automatic student ledger creation.
           </p>
         </section>
 
+        <!-- Flash messages -->
         <section v-if="flash.success || flash.error" class="space-y-2">
           <div
             v-if="flash.success"
@@ -209,6 +209,7 @@ const structureProfileId = (s) =>
           </div>
         </section>
 
+        <!-- Create form -->
         <section class="rounded-2xl border border-white/10 bg-slate-900/70 p-6">
           <div class="mb-4 flex items-center justify-between">
             <h2 class="text-lg font-semibold text-white">Create Fee Structure</h2>
@@ -222,48 +223,63 @@ const structureProfileId = (s) =>
           </div>
 
           <form class="space-y-5" @submit.prevent="submitCreate">
+
+            <!-- Structure meta fields — FIX: fee_profile_id removed -->
             <div class="grid gap-3 md:grid-cols-2">
-              <input
-                v-model="createForm.name"
-                type="text"
-                placeholder="Structure name (e.g. 2026 Day Scholars)"
-                class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
-              />
-              <input
-                v-model.number="createForm.year"
-                type="number"
-                min="2020"
-                max="2100"
-                class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
-              />
+              <div>
+                <label class="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-400">
+                  Structure Name
+                </label>
+                <input
+                  v-model="createForm.name"
+                  type="text"
+                  placeholder="e.g. 2026 Day Scholars Form 1"
+                  class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
+                />
+                <p v-if="createForm.errors.name" class="mt-1 text-xs text-rose-300">{{ createForm.errors.name }}</p>
+              </div>
 
-              <select
-                v-model="createForm.fee_profile_id"
-                class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
-              >
-                <option value="">Select fee profile...</option>
-                <option v-for="fp in feeProfileRows" :key="fp.id" :value="fp.id">
-                  {{ fp.code ? `${fp.code} - ` : '' }}{{ fp.name }}
-                </option>
-              </select>
+              <div>
+                <label class="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-400">
+                  Year
+                </label>
+                <input
+                  v-model.number="createForm.year"
+                  type="number"
+                  min="2000"
+                  max="2100"
+                  class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
+                />
+              </div>
 
-              <select
-                v-model="createForm.category"
-                class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
-              >
-                <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
-              </select>
+              <div>
+                <label class="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-400">
+                  Category
+                </label>
+                <select
+                  v-model="createForm.category"
+                  class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
+                >
+                  <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
+                </select>
+              </div>
 
-              <input
-                v-model="createForm.class_level"
-                type="text"
-                placeholder="Class level (optional)"
-                class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400 md:col-span-2"
-              />
+              <div>
+                <label class="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-400">
+                  Class Level (optional)
+                </label>
+                <input
+                  v-model="createForm.class_level"
+                  type="text"
+                  placeholder="e.g. Form 1"
+                  class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
+                />
+              </div>
             </div>
 
-            <p v-if="createForm.errors.fee_profile_id" class="text-xs text-rose-300">{{ createForm.errors.fee_profile_id }}</p>
-            <p v-if="createForm.errors.lines" class="text-xs text-rose-300">{{ createForm.errors.lines }}</p>
+            <p v-if="createForm.errors.lines" class="text-xs text-rose-300">
+              {{ createForm.errors.lines }}
+            </p>
 
             <textarea
               v-model="createForm.notes"
@@ -272,6 +288,7 @@ const structureProfileId = (s) =>
               class="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400"
             />
 
+            <!-- Lines table -->
             <div class="overflow-x-auto rounded-xl border border-white/10">
               <table class="min-w-full text-sm">
                 <thead class="bg-slate-950/60 text-left text-slate-300">
@@ -294,7 +311,7 @@ const structureProfileId = (s) =>
                         v-model="line.vote_head_id"
                         class="w-44 rounded border border-white/15 bg-slate-950 px-2 py-1 text-sm text-slate-100"
                       >
-                        <option value="">Select</option>
+                        <option value="">Select...</option>
                         <option v-for="vh in voteHeadRows" :key="vh.id" :value="vh.id">
                           {{ vh.code }} - {{ vh.name }}
                         </option>
@@ -305,70 +322,70 @@ const structureProfileId = (s) =>
                     <td class="px-3 py-2">
                       <input
                         v-model.number="line.govt_capitation_amount"
-                        type="number"
-                        min="0"
-                        step="0.01"
+                        type="number" min="0" step="0.01"
                         class="w-32 rounded border border-white/15 bg-slate-950 px-2 py-1 text-sm text-slate-100"
                       />
                     </td>
+
                     <td class="px-3 py-2">
                       <input
                         v-model.number="line.parent_total_amount"
-                        type="number"
-                        min="0"
-                        step="0.01"
+                        type="number" min="0" step="0.01"
                         class="w-32 rounded border border-white/15 bg-slate-950 px-2 py-1 text-sm text-slate-100"
                         @input="syncLineTotal(line)"
                       />
                     </td>
+
                     <td class="px-3 py-2">
                       <input
                         v-model.number="line.term1_amount"
-                        type="number"
-                        min="0"
-                        step="0.01"
+                        type="number" min="0" step="0.01"
                         class="w-24 rounded border border-white/15 bg-slate-950 px-2 py-1 text-sm text-slate-100"
                         @input="syncLineTotal(line)"
                       />
                     </td>
+
                     <td class="px-3 py-2">
                       <input
                         v-model.number="line.term2_amount"
-                        type="number"
-                        min="0"
-                        step="0.01"
+                        type="number" min="0" step="0.01"
                         class="w-24 rounded border border-white/15 bg-slate-950 px-2 py-1 text-sm text-slate-100"
                         @input="syncLineTotal(line)"
                       />
                     </td>
+
                     <td class="px-3 py-2">
                       <input
                         v-model.number="line.term3_amount"
-                        type="number"
-                        min="0"
-                        step="0.01"
+                        type="number" min="0" step="0.01"
                         class="w-24 rounded border border-white/15 bg-slate-950 px-2 py-1 text-sm text-slate-100"
                         @input="syncLineTotal(line)"
                       />
                     </td>
+
                     <td class="px-3 py-2">
                       <input
                         v-model.number="line.sort_order"
-                        type="number"
-                        min="1"
-                        step="1"
+                        type="number" min="1" step="1"
                         class="w-20 rounded border border-white/15 bg-slate-950 px-2 py-1 text-sm text-slate-100"
                       />
                     </td>
+
                     <td class="px-3 py-2">
-                      <button type="button" class="text-rose-300 hover:text-rose-200" @click="removeLine(idx)">
+                      <button
+                        type="button"
+                        class="text-rose-300 hover:text-rose-200 text-xs"
+                        @click="removeLine(idx)"
+                      >
                         Remove
                       </button>
                     </td>
                   </tr>
 
                   <tr v-if="!createForm.lines.length">
-                    <td colspan="8" class="px-3 py-6 text-center text-slate-400">No lines added yet.</td>
+                    <td colspan="8" class="px-3 py-6 text-center text-slate-400 italic">
+                      No lines added yet. Click "+ Add Line" to begin.
+                    </td>
                   </tr>
                 </tbody>
 
@@ -386,7 +403,7 @@ const structureProfileId = (s) =>
               </table>
             </div>
 
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-3">
               <button
                 type="submit"
                 :disabled="createForm.processing"
@@ -394,10 +411,18 @@ const structureProfileId = (s) =>
               >
                 {{ createForm.processing ? 'Saving...' : 'Save Fee Structure' }}
               </button>
+              <button
+                type="button"
+                class="rounded-md border border-white/20 px-3 py-1.5 text-xs text-slate-200 hover:bg-white/5"
+                @click="addLine"
+              >
+                + Add Line
+              </button>
             </div>
           </form>
         </section>
 
+        <!-- Existing structures listing -->
         <section class="rounded-2xl border border-white/10 bg-slate-900/70 p-6">
           <h2 class="mb-4 text-lg font-semibold text-white">Existing Fee Structures</h2>
 
@@ -407,7 +432,6 @@ const structureProfileId = (s) =>
                 <tr>
                   <th class="px-4 py-2">Year</th>
                   <th class="px-4 py-2">Name</th>
-                  <th class="px-4 py-2">Fee Profile</th>
                   <th class="px-4 py-2">Category</th>
                   <th class="px-4 py-2">Class</th>
                   <th class="px-4 py-2">Govt Total</th>
@@ -418,23 +442,31 @@ const structureProfileId = (s) =>
               </thead>
 
               <tbody class="divide-y divide-white/10">
-                <tr v-for="s in structureRows" :key="s.id">
+                <tr
+                  v-for="s in structureRows"
+                  :key="s.id"
+                  class="hover:bg-white/5 transition-colors"
+                >
                   <td class="px-4 py-2 text-slate-200">{{ s.year }}</td>
                   <td class="px-4 py-2 font-medium text-white">{{ s.name }}</td>
-                  <td class="px-4 py-2 text-slate-300">
-                    {{ s.fee_profile_name ?? profileName(structureProfileId(s)) }}
-                  </td>
-                  <td class="px-4 py-2 text-slate-300">{{ s.category }}</td>
+                  <td class="px-4 py-2 text-slate-300 capitalize">{{ s.category }}</td>
                   <td class="px-4 py-2 text-slate-300">{{ s.class_level || '—' }}</td>
                   <td class="px-4 py-2 text-cyan-300">{{ fmt(structureGovtTotal(s)) }}</td>
                   <td class="px-4 py-2 text-amber-300">{{ fmt(structureParentTotal(s)) }}</td>
                   <td class="px-4 py-2 text-slate-300">{{ structureAccountsCount(s) }}</td>
                   <td class="px-4 py-2">
                     <div class="flex gap-3">
-                      <Link :href="endpoints.edit(s.id)" class="text-cyan-300 hover:text-cyan-200">
+                      <Link
+                        :href="endpoints.edit(s.id)"
+                        class="text-cyan-300 hover:text-cyan-200 text-xs font-medium"
+                      >
                         Edit
                       </Link>
-                      <button type="button" class="text-rose-300 hover:text-rose-200" @click="deleteStructure(s.id)">
+                      <button
+                        type="button"
+                        class="text-rose-300 hover:text-rose-200 text-xs font-medium"
+                        @click="deleteStructure(s.id)"
+                      >
                         Delete
                       </button>
                     </div>
@@ -442,12 +474,15 @@ const structureProfileId = (s) =>
                 </tr>
 
                 <tr v-if="!structureRows.length">
-                  <td colspan="9" class="px-4 py-6 text-center text-slate-400">No structures found.</td>
+                  <td colspan="8" class="px-4 py-6 text-center text-slate-400 italic">
+                    No fee structures found. Create one above.
+                  </td>
                 </tr>
               </tbody>
             </table>
           </div>
         </section>
+
       </div>
     </main>
   </AdminLayout>

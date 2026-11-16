@@ -26,19 +26,9 @@ use App\Http\Controllers\SuperAdmin\InvoiceManagementController;
 use App\Http\Controllers\SuperAdmin\SchoolBillingAccessController;
 use Illuminate\Support\Facades\Route;
 
-/*
-|--------------------------------------------------------------------------
-| Public
-|--------------------------------------------------------------------------
-*/
 Route::get('/', PlatformHomeController::class)->name('home');
 Route::get('/schools/{school:slug}', SchoolPageController::class)->name('schools.show');
 
-/*
-|--------------------------------------------------------------------------
-| Super Admin
-|--------------------------------------------------------------------------
-*/
 Route::middleware(['auth', 'verified', 'role:super_admin'])
     ->prefix('super-admin')
     ->name('superadmin.')
@@ -61,11 +51,6 @@ Route::middleware(['auth', 'verified', 'role:super_admin'])
         Route::put('/billing/invoice/{invoice}', [InvoiceManagementController::class, 'update'])->name('billing.update');
     });
 
-/*
-|--------------------------------------------------------------------------
-| School-scoped authenticated
-|--------------------------------------------------------------------------
-*/
 Route::middleware(['auth', 'verified', 'resolve_school'])->group(function () {
     Route::get('/dashboard', fn () => redirect()->route('admin.dashboard'))->name('dashboard');
 
@@ -120,33 +105,30 @@ Route::middleware(['auth', 'verified', 'resolve_school'])->group(function () {
 
         // Finance + Billing
         Route::middleware('role:principal,accountant')->group(function () {
-            // admin.finance.*
             Route::get('/finance', [FinanceController::class, 'index'])->name('finance.index');
             Route::post('/finance', [FinanceController::class, 'store'])->name('finance.store');
             Route::put('/finance/{financeTransaction}', [FinanceController::class, 'update'])->name('finance.update');
             Route::delete('/finance/{financeTransaction}', [FinanceController::class, 'destroy'])->name('finance.destroy');
 
-            // admin.finance.voucher.*
             Route::post('/finance/voucher', [FinanceController::class, 'storeVoucher'])->name('finance.voucher.store');
             Route::delete('/finance/voucher/{voucher}', [FinanceController::class, 'destroyVoucher'])->name('finance.voucher.destroy');
             Route::get('/finance/voucher/{voucher}/print', [FinanceController::class, 'printVoucher'])->name('finance.voucher.print');
 
-            // admin.finance.fee-structures.*
             Route::get('/finance/fee-structures', [FeeStructureController::class, 'index'])->name('finance.fee-structures.index');
             Route::post('/finance/fee-structures', [FeeStructureController::class, 'store'])->name('finance.fee-structures.store');
             Route::get('/finance/fee-structures/{feeStructure}/edit', [FeeStructureController::class, 'edit'])->name('finance.fee-structures.edit');
             Route::put('/finance/fee-structures/{feeStructure}', [FeeStructureController::class, 'update'])->name('finance.fee-structures.update');
             Route::delete('/finance/fee-structures/{feeStructure}', [FeeStructureController::class, 'destroy'])->name('finance.fee-structures.destroy');
 
-            // admin.student-finance.*
+            // Student Finance
             Route::get('/student-finance', [StudentFinanceController::class, 'index'])->name('student-finance.index');
             Route::post('/student-finance/account', [StudentFinanceController::class, 'storeAccount'])->name('student-finance.account.upsert');
             Route::post('/student-finance/payment', [StudentFinanceController::class, 'storePayment'])->name('student-finance.payment.store');
             Route::delete('/student-finance/payment/{payment}', [StudentFinanceController::class, 'destroyPayment'])->name('student-finance.payment.destroy');
             Route::get('/student-finance/receipt/{payment}', [StudentFinanceController::class, 'printReceipt'])->name('student-finance.receipt.print');
+            Route::get('/student-finance/statement/{account}', [StudentFinanceController::class, 'printStatement'])->name('student-finance.statement.print');
             Route::get('/student-finance/votehead-report', [StudentFinanceController::class, 'voteheadReport'])->name('student-finance.votehead.report');
 
-            // admin.billing.*
             Route::get('/billing', [BillingController::class, 'index'])->name('billing.index');
             Route::get('/billing/invoices/{invoice}', [BillingController::class, 'show'])->name('billing.show');
             Route::post('/billing/invoices/{invoice}/payment', [BillingController::class, 'storePayment'])->name('billing.payments.store');
@@ -203,7 +185,7 @@ Route::middleware(['auth', 'verified', 'resolve_school'])->group(function () {
             Route::delete('/staff/{staffRecord}', [StaffDirectoryController::class, 'destroy'])->name('staff.destroy');
         });
 
-        // Class teacher assignment admin
+        // Class teacher assignments
         Route::middleware('role:principal')->group(function () {
             Route::get('/class-teacher-assignments', [ClassTeacherAssignmentController::class, 'index'])->name('class-teacher-assignments.index');
             Route::post('/class-teacher-assignments', [ClassTeacherAssignmentController::class, 'store'])->name('class-teacher-assignments.store');
@@ -211,7 +193,7 @@ Route::middleware(['auth', 'verified', 'resolve_school'])->group(function () {
             Route::delete('/class-teacher-assignments/{assignment}', [ClassTeacherAssignmentController::class, 'destroy'])->name('class-teacher-assignments.destroy');
         });
 
-        // Class-room portal
+        // Class room portal
         Route::middleware(['role:class_teacher', 'class.teacher.scope'])
             ->prefix('class-room')
             ->name('class-room.')
@@ -221,7 +203,7 @@ Route::middleware(['auth', 'verified', 'resolve_school'])->group(function () {
                 Route::post('/exams/{exam}/marks', [ClassTeacherPortalController::class, 'storeExamMarks'])->name('exams.marks.store');
             });
 
-        // Subject-room portal
+        // Subject room portal
         Route::middleware(['role:subject_teacher', 'subject.teacher.scope'])
             ->prefix('subject-room')
             ->name('subject-room.')

@@ -14,87 +14,110 @@ use App\Models\StudentFeePayment;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 
 class FeeAllocationService
 {
     private ?string $cachedLedgerTermDefault = null;
 
+    // ─────────────────────────────────────────────────────────────────────
+    //  Ledger Sync
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * Synchronize ledger rows for an account to match its assigned fee structure.
+     * Preserves ledgers that have payment history (Gap 2 fix).
+     */
     public function syncLedgersFromStructure(StudentFeeAccount $account, int $feeStructureId): void
     {
         $structure = FeeStructure::query()
-            ->with(['lines' => fn ($q) => $q->orderBy('sort_order')->orderBy('id')])
+            ->withoutGlobalScope('school')
+            ->with(['lines' => fn ($q) => $q->withoutGlobalScope('school')->orderBy('sort_order')->orderBy('id')])
             ->find($feeStructureId);
 
         if (!$structure) {
             return;
         }
 
-        $lines = $structure->lines ?? collect();
-        if ($lines->isEmpty()) {
-            return;
-        }
-
-        $ledgerCols = Schema::hasTable('student_fee_ledgers')
-            ? Schema::getColumnListing('student_fee_ledgers')
-            : [];
+        $lines       = $structure->lines ?? collect();
+        $studentId   = $this->resolveAccountStudentId($account);
+        $termDefault = $this->defaultLedgerTerm();
+        $schoolId    = (int) $account->school_id;
 
         $existingLedgers = StudentFeeLedger::query()
-            ->where('school_id', $account->school_id)
+            ->withoutGlobalScope('school')
             ->where('student_fee_account_id', $account->id)
-            ->get()
-            ->keyBy(fn (StudentFeeLedger $l) => (int) $l->vote_head_id);
+            ->get();
+
+        $validLineIds = [];
 
         foreach ($lines as $line) {
             $voteHeadId = (int) $line->vote_head_id;
-            if ($voteHeadId <= 0) {
-                continue;
-            }
+            if ($voteHeadId <= 0) continue;
 
-            $expected = $this->structureLineExpectedAmount($line);
-            $ledger = $existingLedgers->get($voteHeadId);
+            $validLineIds[] = (int) $line->id;
+            $expected = $line->expectedParentAmount();
 
-            $payload = $this->onlyExistingColumns($ledgerCols, [
-                'fee_structure_line_id' => $line->id,
-                'term1_amount' => $line->term1_amount ?? 0,
-                'term2_amount' => $line->term2_amount ?? 0,
-                'term3_amount' => $line->term3_amount ?? 0,
-                'parent_amount' => $expected,
-                'parent_balance' => $expected,
-                'govt_capitation_amount' => $line->govt_capitation_amount ?? 0,
-            ]);
+            $ledger = $existingLedgers->first(function (StudentFeeLedger $l) use ($line, $termDefault) {
+                return (int) $l->fee_structure_line_id === (int) $line->id
+                    && $l->source === 'parent'
+                    && $l->term === $termDefault;
+            });
 
             if ($ledger) {
-                $allocatedSoFar = $this->sumLedgerAllocations((int) $ledger->id);
-                if (array_key_exists('parent_balance', $payload)) {
-                    $payload['parent_balance'] = max(round($expected - $allocatedSoFar, 2), 0);
-                }
-
-                if (!empty($payload)) {
-                    $ledger->update($payload);
-                }
-
-                continue;
+                $ledger->update([
+                    'expected_amount'        => $expected,
+                    'parent_amount'          => $expected,
+                    'govt_capitation_amount'  => (float) ($line->govt_capitation_amount ?? 0),
+                ]);
+                $this->recomputeLedgerBalance($ledger);
+            } else {
+                StudentFeeLedger::query()->create([
+                    'school_id'              => $schoolId,
+                    'student_id'             => $studentId,
+                    'student_fee_account_id' => $account->id,
+                    'fee_structure_line_id'  => $line->id,
+                    'vote_head_id'           => $voteHeadId,
+                    'source'                 => 'parent',
+                    'term'                   => $termDefault,
+                    'expected_amount'        => $expected,
+                    'parent_amount'          => $expected,
+                    'parent_balance'         => $expected,
+                    'outstanding_amount'     => $expected,
+                    'paid_amount'            => 0,
+                    'balance_amount'         => $expected,
+                    'govt_capitation_amount'  => (float) ($line->govt_capitation_amount ?? 0),
+                    'status'                 => 'pending',
+                ]);
             }
+        }
 
-            $createPayload = $this->onlyExistingColumns($ledgerCols, array_merge([
-                'school_id' => $account->school_id,
-                'student_fee_account_id' => $account->id,
-                'fee_structure_line_id' => $line->id,
-                'vote_head_id' => $voteHeadId,
-                'term' => $this->defaultLedgerTerm(),
-                'notes' => null,
-            ], $payload));
+        $staleLedgers = $existingLedgers->filter(
+            fn ($l) => !in_array((int) $l->fee_structure_line_id, $validLineIds, true)
+        );
 
-            StudentFeeLedger::query()->create($createPayload);
+        foreach ($staleLedgers as $stale) {
+            $allocatedTotal = $this->sumActiveAllocations($stale);
+            if ($allocatedTotal <= 0) {
+                $stale->delete();
+            } else {
+                $stale->update([
+                    'expected_amount'    => $allocatedTotal,
+                    'parent_amount'      => $allocatedTotal,
+                    'parent_balance'     => 0,
+                    'outstanding_amount' => 0,
+                    'paid_amount'        => $allocatedTotal,
+                    'balance_amount'     => 0,
+                    'status'             => 'cleared',
+                ]);
+            }
         }
     }
 
-    /**
-     * Priority precedence:
-     * 1) manual override payload
-     * 2) fee profile priorities
-     * 3) structure line sort_order fallback
-     */
+    // ─────────────────────────────────────────────────────────────────────
+    //  Allocation Planning (Gap 5 fix: internal locking)
+    // ─────────────────────────────────────────────────────────────────────
+
     public function allocateAcrossVoteHeadLedgers(
         StudentFeeAccount $account,
         float $paymentAmount,
@@ -103,391 +126,187 @@ class FeeAllocationService
     ): array {
         $amount = round(max($paymentAmount, 0), 2);
         if ($amount <= 0) {
-            return [
-                'allocations' => [],
-                'allocated_total' => 0.0,
-                'unallocated' => 0.0,
-                'priority_source' => 'none',
-            ];
+            return ['allocations' => [], 'allocated_total' => 0.0, 'unallocated' => 0.0, 'priority_source' => 'none'];
         }
 
+        StudentFeeAccount::query()->where('id', $account->id)->lockForUpdate()->first();
+
         $openLedgers = StudentFeeLedger::query()
+            ->withoutGlobalScope('school')
             ->with('feeStructureLine:id,sort_order')
-            ->where('school_id', $account->school_id)
             ->where('student_fee_account_id', $account->id)
+            ->orderBy('id')
+            ->lockForUpdate()
             ->get()
-            ->map(function (StudentFeeLedger $ledger) {
-                $outstanding = $this->ledgerOutstanding($ledger);
-                $ledger->setAttribute('computed_outstanding', $outstanding);
-                return $ledger;
-            })
-            ->filter(fn (StudentFeeLedger $ledger) => (float) $ledger->getAttribute('computed_outstanding') > 0)
+            ->filter(fn (StudentFeeLedger $ledger) => $this->ledgerOutstanding($ledger) > 0)
             ->values();
 
         if ($openLedgers->isEmpty()) {
-            return [
-                'allocations' => [],
-                'allocated_total' => 0.0,
-                'unallocated' => $amount,
-                'priority_source' => 'none',
-            ];
+            return ['allocations' => [], 'allocated_total' => 0.0, 'unallocated' => $amount, 'priority_source' => 'none'];
         }
 
-        [$orderedLedgers, $prioritySource] = $this->orderLedgersByPriority(
-            ledgers: $openLedgers,
-            schoolId: (int) $account->school_id,
-            student: $student,
-            priorityConstraints: $priorityConstraints,
-        );
+        [$orderedLedgers, $prioritySource] = $this->orderLedgersByPriority($openLedgers, (int)$account->school_id, $student, $priorityConstraints);
 
         $remaining = $amount;
         $allocations = [];
         $order = 1;
 
-        /** @var StudentFeeLedger $ledger */
         foreach ($orderedLedgers as $ledger) {
-            if ($remaining <= 0) {
-                break;
-            }
-
-            $outstanding = round((float) $ledger->getAttribute('computed_outstanding'), 2);
-            if ($outstanding <= 0) {
-                continue;
-            }
+            if ($remaining <= 0) break;
+            $outstanding = $this->ledgerOutstanding($ledger);
+            if ($outstanding <= 0) continue;
 
             $allocated = round(min($remaining, $outstanding), 2);
-            if ($allocated <= 0) {
-                continue;
-            }
+            if ($allocated <= 0) continue;
 
             $allocations[] = [
                 'student_fee_ledger_id' => (int) $ledger->id,
-                'vote_head_id' => (int) $ledger->vote_head_id,
-                'allocated_amount' => $allocated,
-                'amount' => $allocated,
-                'allocation_order' => $order,
+                'vote_head_id'          => (int) $ledger->vote_head_id,
+                'allocated_amount'      => $allocated,
+                'amount'                => $allocated,
+                'allocation_order'      => $order,
             ];
-
             $remaining = round($remaining - $allocated, 2);
             $order++;
         }
 
-        $allocatedTotal = round($amount - $remaining, 2);
-
         return [
-            'allocations' => $allocations,
-            'allocated_total' => $allocatedTotal,
-            'unallocated' => round(max($remaining, 0), 2),
+            'allocations'     => $allocations,
+            'allocated_total' => round($amount - $remaining, 2),
+            'unallocated'     => round(max($remaining, 0), 2),
             'priority_source' => $prioritySource,
         ];
     }
 
-    public function applyAllocationsToPayment(
-        StudentFeePayment $payment,
-        array $allocations,
-        int $schoolId,
-        ?int $recordedBy = null
-    ): void {
-        $allocationCols = Schema::hasTable('student_fee_allocations')
-            ? Schema::getColumnListing('student_fee_allocations')
-            : [];
+    // ─────────────────────────────────────────────────────────────────────
+    //  Allocation Application
+    // ─────────────────────────────────────────────────────────────────────
 
-        $ledgerCols = Schema::hasTable('student_fee_ledgers')
-            ? Schema::getColumnListing('student_fee_ledgers')
-            : [];
-
+    public function applyAllocationsToPayment(StudentFeePayment $payment, array $allocations, int $schoolId, ?int $recordedBy = null): void
+    {
         foreach ($allocations as $row) {
-            $ledgerId = (int) ($row['student_fee_ledger_id'] ?? 0);
-            $voteHeadId = (int) ($row['vote_head_id'] ?? 0);
-            $amount = round((float) ($row['allocated_amount'] ?? $row['amount'] ?? 0), 2);
-            $allocationOrder = (int) ($row['allocation_order'] ?? 0);
-
-            if ($ledgerId <= 0 || $voteHeadId <= 0 || $amount <= 0) {
-                continue;
-            }
-
-            $allocPayload = $this->onlyExistingColumns($allocationCols, [
-                'school_id' => $schoolId,
+            StudentFeeAllocation::query()->create([
+                'school_id'              => $schoolId,
                 'student_fee_payment_id' => $payment->id,
-                'student_fee_ledger_id' => $ledgerId,
-                'vote_head_id' => $voteHeadId,
-                'allocated_amount' => $amount,
-                'amount' => $amount,
-                'allocation_order' => $allocationOrder > 0 ? $allocationOrder : 1,
-                'recorded_by' => $recordedBy,
+                'student_fee_ledger_id'  => (int)$row['student_fee_ledger_id'],
+                'vote_head_id'           => (int)$row['vote_head_id'],
+                'allocated_amount'       => (float)$row['allocated_amount'],
+                'amount'                 => (float)$row['allocated_amount'],
+                'allocation_order'       => max((int)$row['allocation_order'], 1),
+                'status'                 => 'active',
             ]);
+        }
 
-            StudentFeeAllocation::query()->create($allocPayload);
-
-            $ledger = StudentFeeLedger::query()
-                ->where('school_id', $schoolId)
-                ->where('id', $ledgerId)
-                ->lockForUpdate()
-                ->first();
-
-            if (!$ledger) {
-                continue;
-            }
-
-            if (in_array('parent_balance', $ledgerCols, true)) {
-                $current = $this->ledgerOutstanding($ledger);
-                $next = round(max($current - $amount, 0), 2);
-                $ledger->update(['parent_balance' => $next]);
-            }
+        $ledgerIds = collect($allocations)->pluck('student_fee_ledger_id')->unique();
+        foreach ($ledgerIds as $lid) {
+            $ledger = StudentFeeLedger::query()->withoutGlobalScope('school')->find($lid);
+            if ($ledger) $this->recomputeLedgerBalance($ledger);
         }
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    //  Audited Reversal (Gap 6 fix)
+    // ─────────────────────────────────────────────────────────────────────
 
     public function reversePaymentAllocations(StudentFeePayment $payment, int $schoolId): void
     {
-        $allocations = StudentFeeAllocation::query()
-            ->where('school_id', $schoolId)
-            ->where('student_fee_payment_id', $payment->id)
-            ->orderByDesc('allocation_order')
-            ->orderByDesc('id')
-            ->get();
+        $allocations = StudentFeeAllocation::query()->withoutGlobalScope('school')->where('student_fee_payment_id', $payment->id)->get();
+        if ($allocations->isEmpty()) return;
 
-        $ledgerCols = Schema::hasTable('student_fee_ledgers')
-            ? Schema::getColumnListing('student_fee_ledgers')
-            : [];
+        $ledgerIds = $allocations->pluck('student_fee_ledger_id')->unique()->sort()->values()->toArray();
+        StudentFeeLedger::query()->withoutGlobalScope('school')->whereIn('id', $ledgerIds)->orderBy('id')->lockForUpdate()->get();
 
         foreach ($allocations as $allocation) {
-            $amount = $this->allocationAmount($allocation);
-            if ($amount <= 0) {
-                continue;
-            }
-
-            $ledger = StudentFeeLedger::query()
-                ->where('school_id', $schoolId)
-                ->where('id', $allocation->student_fee_ledger_id)
-                ->lockForUpdate()
-                ->first();
-
-            if ($ledger && in_array('parent_balance', $ledgerCols, true)) {
-                $current = $this->ledgerOutstanding($ledger);
-                $ledger->update([
-                    'parent_balance' => round($current + $amount, 2),
-                ]);
-            }
+            if (($allocation->status ?? 'active') === 'reversed') continue;
+            $allocation->update(['status' => 'reversed']);
         }
 
-        StudentFeeAllocation::query()
-            ->where('school_id', $schoolId)
-            ->where('student_fee_payment_id', $payment->id)
-            ->delete();
+        foreach ($ledgerIds as $lid) {
+            $ledger = StudentFeeLedger::query()->withoutGlobalScope('school')->find($lid);
+            if ($ledger) $this->recomputeLedgerBalance($ledger);
+        }
     }
 
-    public function getPaymentBreakdown(StudentFeePayment $payment): Collection
+    public function getPaymentBreakdown(StudentFeePayment $payment, bool $includeReversed = false): Collection
     {
-        return StudentFeeAllocation::query()
-            ->with([
-                'voteHead:id,code,name',
-                'ledger:id,vote_head_id',
-                'ledger.voteHead:id,code,name',
-            ])
-            ->where('student_fee_payment_id', $payment->id)
-            ->orderBy('allocation_order')
-            ->orderBy('id')
-            ->get()
-            ->map(function (StudentFeeAllocation $row) {
-                $voteHeadName = $row->voteHead?->name
-                    ?? $row->ledger?->voteHead?->name
-                    ?? 'Unspecified Votehead';
+        $query = StudentFeeAllocation::query()->withoutGlobalScope('school')
+            ->with(['voteHead:id,code,name', 'ledger:id,vote_head_id', 'ledger.voteHead:id,code,name'])
+            ->where('student_fee_payment_id', $payment->id);
 
-                $voteHeadCode = $row->voteHead?->code
-                    ?? $row->ledger?->voteHead?->code
-                    ?? null;
+        if (!$includeReversed) {
+            $query->where(function ($q) { $q->whereNull('status')->orWhere('status', '!=', 'reversed'); });
+        }
 
-                $amount = $this->allocationAmount($row);
-
-                return (object) [
-                    'id' => $row->id,
-                    'vote_head_id' => $row->vote_head_id,
-                    'vote_head_code' => $voteHeadCode,
-                    'vote_head_name' => $voteHeadName,
-                    'allocated_amount' => $amount,
-                    'amount' => $amount,
-                    'allocation_order' => (int) ($row->allocation_order ?? 0),
-                ];
-            });
+        return $query->orderBy('allocation_order')->orderBy('id')->get()->map(fn ($row) => (object) [
+            'id' => $row->id, 'vote_head_id' => $row->vote_head_id,
+            'vote_head_code' => $row->voteHead?->code ?? $row->ledger?->voteHead?->code,
+            'vote_head_name' => $row->voteHead?->name ?? $row->ledger?->voteHead?->name ?? 'Unspecified Votehead',
+            'allocated_amount' => (float)($row->allocated_amount ?? $row->amount ?? 0),
+            'amount' => (float)($row->allocated_amount ?? $row->amount ?? 0),
+            'allocation_order' => (int)$row->allocation_order, 'status' => $row->status ?? 'active',
+        ]);
     }
 
-    /**
-     * @return array{0: \Illuminate\Support\Collection<int,StudentFeeLedger>, 1: string}
-     */
-    private function orderLedgersByPriority(
-        Collection $ledgers,
-        int $schoolId,
-        Student $student,
-        array $priorityConstraints = []
-    ): array {
-        $voteHeadIdsInLedgers = $ledgers
-            ->pluck('vote_head_id')
-            ->map(fn ($v) => (int) $v)
-            ->unique()
-            ->values();
+    public function recomputeLedgerBalance(StudentFeeLedger $ledger): void
+    {
+        $allocated = $this->sumActiveAllocations($ledger);
+        $expected  = (float) ($ledger->parent_amount ?: $ledger->expected_amount ?: 0);
+        $remaining = round(max($expected - $allocated, 0), 2);
 
-        // 1) Manual override
-        $manualIds = collect($priorityConstraints['vote_head_ids'] ?? [])
-            ->map(fn ($id) => (int) $id)
-            ->filter(fn ($id) => $id > 0)
-            ->values();
+        $status = 'pending';
+        if ($allocated > 0 && $allocated >= $expected) $status = 'cleared';
+        elseif ($allocated > 0) $status = 'partial';
 
-        $manualIds = $manualIds
-            ->filter(fn ($id) => $voteHeadIdsInLedgers->contains($id))
-            ->unique()
-            ->values();
+        $ledger->update(['paid_amount' => round($allocated, 2), 'parent_balance' => $remaining, 'outstanding_amount' => $remaining, 'balance_amount' => $remaining, 'status' => $status]);
+    }
 
-        if ($manualIds->isNotEmpty()) {
-            $ordered = $this->sortLedgersByVoteHeadSequence($ledgers, $manualIds);
-            return [$ordered, 'manual'];
-        }
+    private function orderLedgersByPriority(Collection $ledgers, int $schoolId, Student $student, array $priorityConstraints = []): array
+    {
+        $vhIdsInLedgers = $ledgers->pluck('vote_head_id')->map(fn($v)=>(int)$v)->unique();
+        $manualIds = collect($priorityConstraints['vote_head_ids'] ?? [])->map(fn($id)=>(int)$id)->filter(fn($id)=>$id>0 && $vhIdsInLedgers->contains($id))->unique()->values();
+        if ($manualIds->isNotEmpty()) return [$this->sortLedgersByVoteHeadSequence($ledgers, $manualIds), 'manual'];
 
-        // 2) Profile priority
         if (!empty($student->fee_profile_id)) {
-            $profileIds = FeeProfileVoteheadPriority::query()
-                ->where('school_id', $schoolId)
-                ->where('fee_profile_id', (int) $student->fee_profile_id)
-                ->where('is_active', true)
-                ->orderBy('priority_order')
-                ->orderBy('id')
-                ->pluck('vote_head_id')
-                ->map(fn ($id) => (int) $id)
-                ->values();
-
-            $profileIds = $profileIds
-                ->filter(fn ($id) => $voteHeadIdsInLedgers->contains($id))
-                ->unique()
-                ->values();
-
-            if ($profileIds->isNotEmpty()) {
-                $ordered = $this->sortLedgersByVoteHeadSequence($ledgers, $profileIds);
-                return [$ordered, 'profile'];
-            }
+            $profileIds = FeeProfileVoteheadPriority::query()->where('school_id', $schoolId)->where('fee_profile_id', (int)$student->fee_profile_id)->where('is_active', true)->orderBy('priority_order')->orderBy('id')->pluck('vote_head_id')->map(fn($id)=>(int)$id)->filter(fn($id)=>$vhIdsInLedgers->contains($id))->unique()->values();
+            if ($profileIds->isNotEmpty()) return [$this->sortLedgersByVoteHeadSequence($ledgers, $profileIds), 'profile'];
         }
 
-        // 3) Structure fallback
-        $ordered = $ledgers->sort(function (StudentFeeLedger $a, StudentFeeLedger $b) {
-            $sa = (int) ($a->feeStructureLine?->sort_order ?? PHP_INT_MAX);
-            $sb = (int) ($b->feeStructureLine?->sort_order ?? PHP_INT_MAX);
-
-            if ($sa === $sb) {
-                return ((int) $a->id) <=> ((int) $b->id);
-            }
-
-            return $sa <=> $sb;
-        })->values();
-
+        $ordered = $ledgers->sort(fn($a, $b) => ($a->feeStructureLine?->sort_order ?? PHP_INT_MAX) === ($b->feeStructureLine?->sort_order ?? PHP_INT_MAX) ? (int)$a->id <=> (int)$b->id : ($a->feeStructureLine?->sort_order ?? PHP_INT_MAX) <=> ($b->feeStructureLine?->sort_order ?? PHP_INT_MAX))->values();
         return [$ordered, 'structure'];
     }
 
     private function sortLedgersByVoteHeadSequence(Collection $ledgers, Collection $voteHeadOrder): Collection
     {
-        $position = $voteHeadOrder->values()->flip();
-
-        return $ledgers
-            ->sort(function (StudentFeeLedger $a, StudentFeeLedger $b) use ($position) {
-                $pa = $position->get((int) $a->vote_head_id, PHP_INT_MAX);
-                $pb = $position->get((int) $b->vote_head_id, PHP_INT_MAX);
-
-                if ($pa === $pb) {
-                    return ((int) $a->id) <=> ((int) $b->id);
-                }
-
-                return $pa <=> $pb;
-            })
-            ->values();
+        $pos = $voteHeadOrder->values()->flip();
+        return $ledgers->sort(fn($a, $b) => $pos->get((int)$a->vote_head_id, 999) === $pos->get((int)$b->vote_head_id, 999) ? (int)$a->id <=> (int)$b->id : $pos->get((int)$a->vote_head_id, 999) <=> $pos->get((int)$b->vote_head_id, 999))->values();
     }
 
-    private function structureLineExpectedAmount($line): float
+    private function sumActiveAllocations(StudentFeeLedger $ledger): float
     {
-        if (isset($line->payable_parent_amount)) {
-            return round(max((float) $line->payable_parent_amount, 0), 2);
-        }
-
-        $parentTotal = (float) ($line->parent_total_amount ?? 0);
-        if ($parentTotal > 0) {
-            return round($parentTotal, 2);
-        }
-
-        $total = (float) ($line->total_amount ?? 0);
-        if ($total > 0) {
-            return round($total, 2);
-        }
-
-        $termSum = (float) ($line->term1_amount ?? 0)
-            + (float) ($line->term2_amount ?? 0)
-            + (float) ($line->term3_amount ?? 0);
-
-        return round(max($termSum, 0), 2);
+        $q = DB::table('student_fee_allocations')->where('student_fee_ledger_id', $ledger->id);
+        if (Schema::hasColumn('student_fee_allocations', 'status')) $q->where(fn($q) => $q->whereNull('status')->orWhere('status', '!=', 'reversed'));
+        return (float)$q->sum(Schema::hasColumn('student_fee_allocations', 'allocated_amount') ? 'allocated_amount' : 'amount');
     }
 
     private function ledgerOutstanding(StudentFeeLedger $ledger): float
     {
-        if ($ledger->parent_balance !== null) {
-            return round(max((float) $ledger->parent_balance, 0), 2);
-        }
-
-        $expected = (float) ($ledger->parent_amount ?? 0);
-        $allocated = $this->sumLedgerAllocations((int) $ledger->id);
-
-        return round(max($expected - $allocated, 0), 2);
-    }
-
-    private function sumLedgerAllocations(int $ledgerId): float
-    {
-        if ($ledgerId <= 0) {
-            return 0.0;
-        }
-
-        $rows = StudentFeeAllocation::query()
-            ->where('student_fee_ledger_id', $ledgerId)
-            ->get(['allocated_amount', 'amount']);
-
-        $sum = 0.0;
-        foreach ($rows as $row) {
-            $sum += $this->allocationAmount($row);
-        }
-
-        return round(max($sum, 0), 2);
-    }
-
-    private function allocationAmount(StudentFeeAllocation $allocation): float
-    {
-        $value = $allocation->allocated_amount ?? $allocation->amount ?? 0;
-        return round(max((float) $value, 0), 2);
-    }
-
-    private function onlyExistingColumns(array $tableColumns, array $payload): array
-    {
-        return array_intersect_key($payload, array_flip($tableColumns));
+        return round(max((float)($ledger->parent_balance ?? (($ledger->parent_amount ?: $ledger->expected_amount ?: 0) - $this->sumActiveAllocations($ledger))), 0), 2);
     }
 
     private function defaultLedgerTerm(): string
     {
-        if ($this->cachedLedgerTermDefault !== null) {
-            return $this->cachedLedgerTermDefault;
-        }
-
+        if ($this->cachedLedgerTermDefault) return $this->cachedLedgerTermDefault;
         $fallback = 'ANNUAL';
+        try {
+            $row = DB::selectOne("SHOW COLUMNS FROM `student_fee_ledgers` WHERE Field = 'term'");
+            if ($row && !empty($row->Default)) return $this->cachedLedgerTermDefault = (string)$row->Default;
+        } catch (\Throwable $e) {}
+        return $this->cachedLedgerTermDefault = $fallback;
+    }
 
-        if (!Schema::hasTable('student_fee_ledgers') || !Schema::hasColumn('student_fee_ledgers', 'term')) {
-            $this->cachedLedgerTermDefault = $fallback;
-            return $this->cachedLedgerTermDefault;
-        }
-
-        $row = DB::selectOne("SHOW COLUMNS FROM `student_fee_ledgers` WHERE Field = 'term'");
-        $type = (string) ($row->Type ?? '');
-
-        if (preg_match('/^enum\\((.*)\\)$/i', $type, $matches)) {
-            $values = str_getcsv($matches[1], ',', "'");
-            $first = $values[0] ?? null;
-            if (!empty($first)) {
-                $this->cachedLedgerTermDefault = (string) $first;
-                return $this->cachedLedgerTermDefault;
-            }
-        }
-
-        $this->cachedLedgerTermDefault = $fallback;
-        return $this->cachedLedgerTermDefault;
+    private function resolveAccountStudentId(StudentFeeAccount $account): int
+    {
+        if (!$account->student_id) throw ValidationException::withMessages(['student_fee_account_id' => 'Account has no student_id.']);
+        return (int)$account->student_id;
     }
 }
