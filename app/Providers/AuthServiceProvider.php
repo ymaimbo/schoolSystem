@@ -2,14 +2,14 @@
 
 namespace App\Providers;
 
-use App\Models\Exam;
+use App\Models\ExamResult; // <-- Changed to ExamResult
 use App\Policies\ExamResultPolicy;
 use Illuminate\Foundation\Support\Providers\AuthServiceProvider as ServiceProvider;
 
 class AuthServiceProvider extends ServiceProvider
 {
     protected $policies = [
-        Exam::class => ExamResultPolicy::class,
+        ExamResult::class => ExamResultPolicy::class, // <-- Changed to ExamResult
     ];
 
     public function boot(): void

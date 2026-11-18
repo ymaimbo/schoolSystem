@@ -16,6 +16,7 @@ use App\Http\Controllers\Admin\StaffDirectoryController;
 use App\Http\Controllers\Admin\StoreController;
 use App\Http\Controllers\Admin\StudentController;
 use App\Http\Controllers\Admin\StudentFinanceController;
+use App\Http\Controllers\Admin\StudentPocketMoneyController;
 use App\Http\Controllers\Admin\SubjectTeacherPortalController;
 use App\Http\Controllers\Admin\TimetableController;
 use App\Http\Controllers\PlatformHomeController;
@@ -62,7 +63,7 @@ Route::middleware(['auth', 'verified', 'resolve_school'])->group(function () {
         Route::get('/', AdminDashboardController::class)->name('dashboard');
 
         // Students
-        Route::middleware('role:principal,deputy_principal,dean,secretary,accountant')->group(function () {
+        Route::middleware('role:principal,deputy_principal,dean,secretary,accountant,bursar')->group(function () {
             Route::get('/students', [StudentController::class, 'index'])->name('students.index');
         });
 
@@ -103,7 +104,7 @@ Route::middleware(['auth', 'verified', 'resolve_school'])->group(function () {
             Route::delete('/timetable/{timetable}', [TimetableController::class, 'destroy'])->name('timetable.destroy');
         });
 
-        // Finance + Billing
+        // Finance + Billing (School Fees)
         Route::middleware('role:principal,accountant')->group(function () {
             Route::get('/finance', [FinanceController::class, 'index'])->name('finance.index');
             Route::post('/finance', [FinanceController::class, 'store'])->name('finance.store');
@@ -137,14 +138,23 @@ Route::middleware(['auth', 'verified', 'resolve_school'])->group(function () {
             Route::get('/billing/receipts/{payment}/pdf', [BillingController::class, 'downloadReceiptPdf'])->name('billing.receipts.pdf');
         });
 
+        // Student Pocket Money (Separated group for Bursar & Deputy Principal Access)
+        Route::middleware('role:principal,deputy_principal,accountant,bursar')->group(function () {
+            Route::get('/pocket-money', [StudentPocketMoneyController::class, 'index'])->name('pocket-money.index');
+            Route::post('/pocket-money/account', [StudentPocketMoneyController::class, 'storeAccount'])->name('pocket-money.account.store');
+            Route::post('/pocket-money/transaction', [StudentPocketMoneyController::class, 'storeTransaction'])->name('pocket-money.transaction.store');
+            Route::delete('/pocket-money/transaction/{transaction}', [StudentPocketMoneyController::class, 'reverseTransaction'])->name('pocket-money.transaction.reverse');
+            Route::get('/pocket-money/statement/{account}', [StudentPocketMoneyController::class, 'printStatement'])->name('pocket-money.statement.print');
+        });
+
         // Store
-        Route::middleware('role:principal,accountant,store_keeper')->group(function () {
+        Route::middleware('role:principal,accountant,bursar,store_keeper')->group(function () {
             Route::get('/store', [StoreController::class, 'index'])->name('store.index');
             Route::post('/store', [StoreController::class, 'store'])->name('store.store');
             Route::put('/store/{inventoryItem}', [StoreController::class, 'update'])->name('store.update');
         });
 
-        Route::middleware('role:principal,accountant')->group(function () {
+        Route::middleware('role:principal,accountant,bursar')->group(function () {
             Route::delete('/store/{inventoryItem}', [StoreController::class, 'destroy'])->name('store.destroy');
         });
 
